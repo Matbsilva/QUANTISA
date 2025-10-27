@@ -1,10 +1,12 @@
+
+
 "use client";
 
 import React from 'react';
 import type { Project, Service, InternalQueryApproval, ApprovalStatus, RefinementSuggestion, InternalQuery } from '../types';
-import { Button, TrashIcon, PlusIcon, ClipboardIcon, DownloadIcon, Spinner, ArrowLeftIcon } from './Shared';
+import { Button, TrashIcon, PlusIcon, ClipboardIcon, DownloadIcon, Spinner, ArrowLeftIcon, Modal } from './Shared';
 import { KanbanStatus } from '../types';
-import { getDetailedScope, getRefinementAndValueEngineeringSuggestions, processApprovedQueries } from '../services/geminiService';
+import { getDetailedScope, getRefinementAndValueEngineeringSuggestions, processQueryResponses } from '../services/geminiService';
 
 const STEPS = [
     { name: "Resumo", index: 0 },
@@ -109,7 +111,7 @@ const Quadrant = ({ title, children, className, actions }: { title: string, chil
             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">{title}</h3>
             {actions && <div>{actions}</div>}
         </div>
-        <div className="p-4 flex-1">
+        <div className="p-4 flex-1 overflow-y-auto">
             {children}
         </div>
     </div>
@@ -307,11 +309,85 @@ const Step1Analysis = ({ project, onComplete, showToast }: { project: Project, o
     );
 }
 
+// --- Verba Modal Component ---
+const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
+    isOpen: boolean;
+    items: Service[];
+    onClose: () => void;
+    onUpdate: (items: Service[]) => void;
+    onContinue: () => void;
+}) => {
+    const [editedItems, setEditedItems] = React.useState<Service[]>([]);
+
+    React.useEffect(() => {
+        if (isOpen) {
+            setEditedItems(JSON.parse(JSON.stringify(items))); // Deep copy
+        }
+    }, [isOpen, items]);
+
+    const handleItemChange = (id: string, field: 'quantidade' | 'unidade', value: string | number) => {
+        setEditedItems(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <Modal isOpen={isOpen} onClose={onClose} title="Itens com Quantidade Indefinida">
+            <div className="space-y-4">
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                    Os seguintes itens estão marcados como 'verba' e não possuem uma quantidade real. Por favor, revise e atualize as quantidades e unidades para garantir a precisão do orçamento.
+                </p>
+                <div className="border rounded-md max-h-64 overflow-y-auto dark:border-gray-600">
+                    <table className="w-full text-sm">
+                        <thead className="text-left text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                            <tr>
+                                <th className="p-2">Serviço</th>
+                                <th className="p-2 w-28">Quantidade</th>
+                                <th className="p-2 w-28">Unidade</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {editedItems.map(item => (
+                                <tr key={item.id} className="border-t dark:border-gray-600">
+                                    <td className="p-2 font-medium">{item.nome || "Serviço não identificado"}</td>
+                                    <td className="p-2">
+                                        <input
+                                            type="number"
+                                            value={item.quantidade}
+                                            onChange={e => handleItemChange(item.id, 'quantidade', parseFloat(e.target.value) || 0)}
+                                            className="w-full bg-white dark:bg-gray-800 p-1 rounded border border-gray-300 dark:border-gray-500"
+                                        />
+                                    </td>
+                                    <td className="p-2">
+                                        <input
+                                            type="text"
+                                            value={item.unidade}
+                                            onChange={e => handleItemChange(item.id, 'unidade', e.target.value)}
+                                            className="w-full bg-white dark:bg-gray-800 p-1 rounded border border-gray-300 dark:border-gray-500"
+                                        />
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+                <div className="flex justify-end space-x-2 pt-4">
+                    <Button variant="secondary" onClick={onContinue}>Continuar Mesmo Assim</Button>
+                    <Button variant="primary" onClick={() => onUpdate(editedItems)}>Atualizar e Revisar</Button>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
+
 // --- Step 2: Detailed Scope ---
-const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: { project: Project, onComplete: () => void, updateProject: (project: Project) => void, showToast: (message: string) => void }) => {
+const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { project: Project, onAdvance: () => void, updateProject: (project: Project) => void, showToast: (message: string) => void }) => {
     const [isApplyingDefinitions, setIsApplyingDefinitions] = React.useState(false);
     const [isGeneratingSuggestions, setIsGeneratingSuggestions] = React.useState(false);
     const [areDefinitionsApplied, setAreDefinitionsApplied] = React.useState(!!(project.refinementSuggestions || project.valueEngineeringAnalysis));
+    const [isRefinementApplied, setIsRefinementApplied] = React.useState(false);
+
 
     const handleServiceChange = (id: string, field: 'quantidade' | 'unidade', value: string | number) => {
         const updatedServices = (project.detailedServices || []).map(s => 
@@ -393,19 +469,19 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                 q => project.internalQueryApprovals?.[q.id]?.status === 'approved'
             );
             
-            const rejectedQueries = (project.internalQueries || []).filter(
-                q => project.internalQueryApprovals?.[q.id]?.status === 'rejected'
-            );
+            const rejectedQueriesWithComments = (project.internalQueries || [])
+                .filter(q => project.internalQueryApprovals?.[q.id]?.status === 'rejected' && project.internalQueryApprovals?.[q.id]?.comment.trim() !== '')
+                .map(q => ({ query: q, comment: project.internalQueryApprovals![q.id].comment }));
 
-            // Even if no queries were approved, we might have manual edits to the service list, so we proceed.
-            const processedData = approvedQueries.length > 0 
-                ? await processApprovedQueries(approvedQueries, project.detailedServices || [])
-                : { newServices: [], newObservations: [] };
+            const processedData = await processQueryResponses(
+                approvedQueries, 
+                rejectedQueriesWithComments,
+                project.detailedServices || []
+            );
 
             const updatedServices = [...(project.detailedServices || []), ...processedData.newServices];
             const updatedObservations = [...(project.observations || []), ...processedData.newObservations];
             
-            // Filter out queries that have been addressed (approved or rejected)
             const remainingQueries = (project.internalQueries || []).filter(
                 q => !project.internalQueryApprovals?.[q.id]?.status
             );
@@ -415,11 +491,12 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                 detailedServices: updatedServices,
                 observations: updatedObservations,
                 internalQueries: remainingQueries, 
-                refinementSuggestions: undefined, // Reset to trigger re-generation
+                refinementSuggestions: undefined,
                 valueEngineeringAnalysis: undefined,
             });
 
             setAreDefinitionsApplied(true);
+            setIsRefinementApplied(false); // Reset this state for the new flow
             showToast("Definições aplicadas com sucesso!");
 
         } catch (e) {
@@ -429,6 +506,13 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
              setIsApplyingDefinitions(false);
         }
     };
+
+    const handleApplyRefinements = () => {
+        // Here you would typically send the final selections to a backend or AI service.
+        // For now, we'll just confirm the state is saved and allow advancing.
+        setIsRefinementApplied(true);
+        showToast("Seleções de refinamento salvas!");
+    }
 
 
     return (
@@ -522,7 +606,7 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                                             </Button>
                                         </div>
                                     </div>
-                                    {project.internalQueryApprovals?.[query.id]?.status && (
+                                    {project.internalQueryApprovals?.[query.id]?.status === 'rejected' && (
                                         <textarea
                                             rows={1}
                                             placeholder="Adicionar comentário ou correção..."
@@ -543,7 +627,7 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                 <div className="flex flex-col items-center justify-center text-center p-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                     <Spinner className="w-8 h-8 mb-4" />
                     <h3 className="text-lg font-semibold dark:text-white">Processando Definições...</h3>
-                    <p className="text-gray-600 dark:text-gray-400">A IA está interpretando suas aprovações e edições.</p>
+                    <p className="text-gray-600 dark:text-gray-400">A IA está interpretando suas aprovações e correções.</p>
                 </div>
             )}
             
@@ -635,9 +719,9 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                                 {(analysis.options || []).map(opt => (
                                                     <tr key={opt.solution}>
-                                                        <td className="p-3 font-medium text-gray-900 dark:text-gray-200 whitespace-pre-line" dangerouslySetInnerHTML={{ __html: (opt.solution || '').replace(/<br\/>/g, '<br />') }}></td>
-                                                        <td className="p-3 whitespace-pre-line text-center" dangerouslySetInnerHTML={{ __html: (opt.relativeCost || 'N/A').replace(/<br\/>/g, '<br />') }}></td>
-                                                        <td className="p-3 whitespace-pre-line text-center" dangerouslySetInnerHTML={{ __html: (opt.deadlineImpact || 'N/A').replace(/<br\/>/g, '<br />') }}></td>
+                                                        <td className="p-3 font-medium text-gray-900 dark:text-gray-200 whitespace-pre-line">{opt.solution}</td>
+                                                        <td className="p-3 whitespace-pre-line text-center">{opt.relativeCost || 'N/A'}</td>
+                                                        <td className="p-3 whitespace-pre-line text-center">{opt.deadlineImpact || 'N/A'}</td>
                                                         <td className="p-3 text-green-700 dark:text-green-400">
                                                             <ul className="list-disc list-inside space-y-1">
                                                                 {(opt.pros || []).map(pro => <li key={pro}>{pro}</li>)}
@@ -683,22 +767,32 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                         Aplicar Definições e Gerar Sugestões
                     </Button>
                  ) : (
-                     <Button 
-                        onClick={() => setAreDefinitionsApplied(false)} 
-                        size="lg" 
-                        variant='secondary'
-                    >
-                        Alterar Definições
-                    </Button>
+                    <div className="flex flex-col items-center gap-4">
+                        <Button 
+                           onClick={handleApplyRefinements} 
+                           size="lg" 
+                           variant='primary'
+                           disabled={isRefinementApplied}
+                       >
+                           {isRefinementApplied ? '✓ Refinamentos Salvos' : 'Salvar Refinamentos e Finalizar Escopo'}
+                       </Button>
+                       <Button 
+                           onClick={onAdvance} 
+                           size="lg" 
+                           disabled={!isRefinementApplied}
+                       >
+                           Avançar para Mapeamento →
+                       </Button>
+                        <Button 
+                           onClick={() => setAreDefinitionsApplied(false)} 
+                           size="sm" 
+                           variant='ghost'
+                           className="mt-2"
+                       >
+                           Alterar Definições Iniciais
+                       </Button>
+                   </div>
                 )}
-                
-                <Button 
-                    onClick={onComplete} 
-                    size="lg" 
-                    disabled={!areDefinitionsApplied}
-                >
-                    Avançar para Mapeamento →
-                </Button>
             </div>
         </div>
     );
@@ -761,6 +855,8 @@ interface WorkspaceViewProps {
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, updateProject, showToast, initialStep = 0 }) => {
     const [activeStep, setActiveStep] = React.useState(initialStep);
     const [highestStepVisited, setHighestStepVisited] = React.useState(initialStep);
+    const [isVerbaModalOpen, setIsVerbaModalOpen] = React.useState(false);
+    const [verbaItemsToEdit, setVerbaItemsToEdit] = React.useState<Service[]>([]);
 
     React.useEffect(() => {
         setActiveStep(initialStep);
@@ -839,13 +935,26 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
         }
     }
 
+    const handleAdvanceToMapping = () => {
+        const problematicItems = project.detailedServices?.filter(s => 
+            s.unidade.toLowerCase().trim() === 'vb' || s.unidade.toLowerCase().trim() === 'verba'
+        ) || [];
+
+        if (problematicItems.length > 0) {
+            setVerbaItemsToEdit(problematicItems);
+            setIsVerbaModalOpen(true);
+        } else {
+            handleStepCompletion(2, {});
+        }
+    };
+
     const renderContent = () => {
         switch (activeStep) {
             case 0: return <Step0Summary project={project} onAdvance={() => handleStepCompletion(0, {})} />;
             case 1: 
                 return <Step1Analysis project={project} onComplete={(data) => handleStepCompletion(1, data)} showToast={showToast} />;
             case 2:
-                return <Step2DetailedScope project={project} onComplete={() => handleStepCompletion(2, {})} updateProject={updateProject} showToast={showToast} />;
+                return <Step2DetailedScope project={project} onAdvance={handleAdvanceToMapping} updateProject={updateProject} showToast={showToast} />;
             case 3:
                 return <Step3Mapping project={project} onComplete={() => handleStepCompletion(3, {})} />;
             case 4:
@@ -881,6 +990,24 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
             <div>
                 {renderContent()}
             </div>
+             <VerbaModal 
+                isOpen={isVerbaModalOpen}
+                items={verbaItemsToEdit}
+                onClose={() => setIsVerbaModalOpen(false)}
+                onUpdate={(updatedItems) => {
+                    const newServices = (project.detailedServices || []).map(s => {
+                        const updatedItem = updatedItems.find(u => u.id === s.id);
+                        return updatedItem ? updatedItem : s;
+                    });
+                    updateProject({...project, detailedServices: newServices});
+                    setIsVerbaModalOpen(false);
+                    showToast("Itens atualizados. Por favor, clique em 'Avançar' novamente.");
+                }}
+                onContinue={() => {
+                    setIsVerbaModalOpen(false);
+                    handleStepCompletion(2, {});
+                }}
+            />
         </div>
     );
 };

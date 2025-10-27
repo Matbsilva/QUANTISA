@@ -92,6 +92,11 @@ export const getDetailedScope = async (
         if (!jsonData.detailedServices || !Array.isArray(jsonData.detailedServices)) {
             throw new Error("Resposta da IA inválida: 'detailedServices' não encontrado ou não é um array.");
         }
+        
+        // Data integrity check
+        jsonData.detailedServices.forEach(s => {
+            if (!s.nome) s.nome = "Serviço sem nome";
+        });
 
         jsonData.pendingDoubts = jsonData.pendingDoubts || [];
         jsonData.internalQueries = jsonData.internalQueries || [];
@@ -110,7 +115,11 @@ export interface ProcessedQueriesOutput {
     newObservations: string[];
 }
 
-export const processApprovedQueries = async (approvedQueries: InternalQuery[], currentServices: Service[]): Promise<ProcessedQueriesOutput> => {
+export const processQueryResponses = async (
+    approvedQueries: InternalQuery[],
+    rejectedQueries: { query: InternalQuery; comment: string }[],
+    currentServices: Service[]
+): Promise<ProcessedQueriesOutput> => {
      const aiInstance = getAiInstance();
     if (!aiInstance) throw new Error("Serviço de IA não está configurado.");
     
@@ -118,31 +127,29 @@ export const processApprovedQueries = async (approvedQueries: InternalQuery[], c
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
 
-        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
-        *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
-        *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
-        *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralize qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
-        *   Precisão como Vantagem Competitiva: Seu trabalho é apurar os custos com a máxima precisão possível. Isso permite negociar com mais agressividade, ter uma margem de lucro clara e ganhar mais projetos por apresentar propostas tecnicamente superiores e financeiramente mais seguras.
-        *   Consultor, Não Calculista: Você atua como um consultor técnico para o seu cliente (eu), explicando o "porquê" de cada decisão, educando sobre os riscos e guiando para a melhor solução técnica e comercial.
-
-        2.0 AÇÃO: PROCESSAMENTO DE PREMISSAS APROVADAS
-        Sua tarefa é interpretar um conjunto de premissas que foram aprovadas e transformá-las em ações concretas para um orçamento.
+        2.0 AÇÃO: PROCESSAMENTO DE PREMISSAS APROVADAS E REPROVADAS
+        Sua tarefa é interpretar um conjunto de premissas que foram aprovadas e reprovadas pelo usuário e transformá-las em ações concretas para um orçamento.
 
         **Contexto Fornecido:**
         - **Lista de Serviços Atuais (para referência de contexto):** ${JSON.stringify(currentServices)}
-        - **Lista de Premissas Aprovadas:** ${JSON.stringify(approvedQueries)}
+        - **Lista de Premissas APROVADAS pelo usuário:** ${JSON.stringify(approvedQueries)}
+        - **Lista de Premissas REPROVADAS pelo usuário (com instruções corretivas):** ${JSON.stringify(rejectedQueries)}
 
-        **Suas Tarefas:**
-        1.  **Análise de Intenção:** Para cada premissa na lista, analise o texto e determine se ele representa:
-            a) A criação de um **novo serviço** que não existia antes.
-            b) Uma **observação geral** sobre o projeto (uma condição, uma premissa de execução, etc.).
-        2.  **Geração de Novos Serviços (com Inteligência):** Se uma premissa representa um novo serviço, você deve criar um objeto de serviço completo.
-            - **nome:** Crie um nome de serviço claro e conciso (ex: "Aplicação de autonivelante cimentício").
-            - **description:** Escreva uma descrição técnica para o serviço.
-            - **quantidade e unidade:** **Se a premissa estiver relacionada a um serviço existente (ex: aplicar sobre um contrapiso), TENTE INFERIR a quantidade e unidade a partir do serviço de base.** Se não for possível, ESTIME um valor plausível e use 'vb' (verba) como unidade. Ex: { "quantidade": 1, "unidade": "vb" }. É crucial que você sempre forneça um valor.
-        3.  **Geração de Observações:** Se a premissa for uma observação, reescreva a frase como uma afirmação declarativa.
-            - **Exemplo de Entrada:** "As dimensões do elevador de serviço não foram informadas. Assumir que o elevador comporta chapas de drywall (2.40m ou 3.00m) e outros materiais de grandes dimensões sem necessidade de corte ou içamento manual?"
-            - **Exemplo de Saída:** "Premissa: As dimensões do elevador de serviço não foram informadas; assume-se que o mesmo comporta chapas de drywall e outros materiais de grandes dimensões sem necessidade de corte ou içamento."
+        **Suas Tarefas (Processar em Ordem):**
+
+        **1. Processar Premissas APROVADAS:**
+           - Para cada premissa APROVADA, determine se ela resulta em um **novo serviço** ou uma **observação geral**.
+           - **Se for um novo serviço:** Crie um objeto de serviço completo. Tente inferir a quantidade e unidade de serviços base. Se não for possível, use { "quantidade": 1, "unidade": "vb" }. **É OBRIGATÓRIO que o serviço tenha um nome ('nome').**
+           - **Se for uma observação:** Reescreva a premissa como uma afirmação declarativa.
+
+        **2. Processar Premissas REPROVADAS (com alta prioridade):**
+           - Para cada premissa REPROVADA, analise a **instrução corretiva** do usuário no campo "comment". Esta instrução TEM PRECEDÊNCIA sobre a premissa original.
+           - **Exemplo:**
+             - **Premissa Reprovada:** "Não considerar a pintura do forro."
+             - **Comentário do Usuário:** "Errado. Considerar pintura do forro com massa e tinta, mesma área do forro de gesso."
+             - **Sua Ação:** Interpretar o comentário e criar um **novo serviço** como: { "nome": "Pintura de forro de gesso com massa corrida e tinta acrílica", "quantidade": 95, "unidade": "m²", "description": "Conforme instrução do usuário." }.
+           - Se a instrução for para **NÃO FAZER** algo (ex: "Não incluir este item"), gere uma **observação** clara, como: "Observação: Conforme instrução, o serviço de proteção de áreas comuns não foi incluído."
+           - Aja com base na instrução do usuário no comentário para criar novos serviços ou observações.
 
         **Formato de Saída Obrigatório:**
         Responda APENAS com um único objeto JSON válido, sem nenhum texto extra. A estrutura deve ser:
@@ -171,15 +178,18 @@ export const processApprovedQueries = async (approvedQueries: InternalQuery[], c
 
         const jsonData: ProcessedQueriesOutput = JSON.parse(textToParse);
         
-        // Add unique IDs to new services
-        jsonData.newServices = (jsonData.newServices || []).map(s => ({...s, id: `serv-new-${Date.now()}-${Math.random()}`}));
+        // Add unique IDs and validate new services
+        jsonData.newServices = (jsonData.newServices || []).map(s => {
+            if (!s.nome) s.nome = "Serviço sem nome (gerado pela IA)";
+            return {...s, id: `serv-new-${Date.now()}-${Math.random()}`};
+        });
         jsonData.newObservations = jsonData.newObservations || [];
 
         return jsonData;
 
     } catch (error) {
-        console.error("Error processing approved queries:", error);
-        throw new Error("Não foi possível processar as definições aprovadas.");
+        console.error("Error processing query responses:", error);
+        throw new Error("Não foi possível processar as definições aprovadas/reprovadas.");
     }
 };
 
@@ -200,46 +210,45 @@ export const getRefinementAndValueEngineeringSuggestions = async (
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
 
-        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
-        *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
-        *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
-        *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
-        *   Precisão como Vantagem Competitiva: Seu trabalho é apurar os custos com a máxima precisão possível. Isso permite negociar com mais agressividade, ter uma margem de lucro clara e ganhar mais projetos por apresentar propostas tecnicamente superiores e financeiramente mais seguras.
-        *   Consultor, Não Calculista: Você atua como um consultor técnico para o seu cliente (eu), explicando o "porquê" de cada decisão, educando sobre os riscos e guiando para a melhor solução técnica e comercial.
-
         2.0 AÇÃO: GERAR SUGESTÕES DE REFINAMENTO E ANÁLISE DE ENGENHARIA DE VALOR
 
         **Contexto:**
         - **Serviços Detalhados:** ${JSON.stringify(detailedServices)}
         - **Dúvidas Pendentes:** ${JSON.stringify(pendingDoubts)}
 
-        **Suas Tarefas:**
+        **SUAS TAREFAS (SEGUIR EXATAMENTE):**
 
-        **1. Refinamento de Dúvidas (refinementSuggestions):**
+        **TAREFA 1: Refinamento de Dúvidas (refinementSuggestions):**
            - Para CADA dúvida pendente, gere de 3 a 5 sugestões de resposta.
            - Para cada sugestão, determine se a ação resultante é uma **modificação** de um serviço existente ou a **adição** de um novo, e preencha o campo \`actionType\` com \`'modify'\` ou \`'add'\`.
            - **Regra de Ordenação:** Ordene as sugestões da mais econômica/simples para a mais cara/premium.
            - **Contextualização:** Para cada sugestão, adicione uma "tag" que justifique sua posição (ex: "Solução Econômica", "Padrão de Mercado (Custo-Benefício)", "Alta Performance").
 
-        **2. Análise de Engenharia de Valor (valueEngineeringAnalysis):**
-           - **É OBRIGATÓRIO E CRÍTICO que você execute esta análise.**
-           - **Seleção de Itens:** Analise a lista de serviços e identifique de 1 a 3 itens com maior impacto potencial no custo ou no risco técnico do projeto.
-           - **Geração de Alternativas:** Para cada item selecionado, você **DEVE** criar uma análise.
+        **TAREFA 2: Análise de Engenharia de Valor (valueEngineeringAnalysis):**
+           - **SUA TAREFA CRÍTICA E OBRIGATÓRIA É PREENCHER O ARRAY 'valueEngineeringAnalysis'. FALHAR EM PREENCHÊ-LO RESULTARÁ EM ERRO. A ANÁLISE NÃO É OPCIONAL.**
+           - **Seleção de Itens (LÓGICA DINÂMICA OBRIGATÓRIA):** Analise a lista de serviços e identifique um número de itens com maior impacto potencial no custo ou risco, seguindo a regra abaixo:
+                - Se houver 10 ou menos serviços, analise de 1 a 3 itens.
+                - Se houver entre 11 e 20 serviços, analise de 3 a 5 itens.
+                - Se houver entre 21 e 30 serviços, analise de 5 a 7 itens.
+                - Se houver entre 31 e 40 serviços, analise de 7 a 9 itens.
+                - Se houver entre 41 e 50 serviços, analise de 9 a 11 itens.
+                - Se houver entre 51 e 70 serviços, analise de 11 a 13 itens.
+                - Se houver mais de 70 serviços, analise de 13 a 15 itens.
+           - **Geração de Alternativas:** Para cada item selecionado, você **DEVE** criar uma análise completa.
                 - A primeira opção **DEVE SER SEMPRE** a "Solução Atual", que é o serviço como descrito no escopo.
-                - Gere de uma a duas "Alternativas" que sejam soluções técnicas viáveis e comuns no mercado, pensando nos eixos de otimização (Velocidade, Performance, Custo).
-           - **Preenchimento das Colunas (Lógica Detalhada e Obrigatória):** Para cada solução (a atual e as alternativas), você **DEVE OBRIGATORIAMENTE PREENCHER TODAS as colunas abaixo.** Não deixe nenhum campo em branco. Seja técnico e quantitativo.
-                - **solution:** Título curto e claro. Use <br/> para quebras de linha se necessário.
-                - **relativeCost:** Estime a variação percentual do custo total (material + mão de obra) da alternativa em relação à "Solução Atual". Formato da Resposta: "Custo Base<br/>(0%)", "Custo Alto (+40%)<br/>(aprox.)", "Custo Baixo (-15%)<br/>(aprox.)".
-                - **deadlineImpact:** Estime o impacto no tempo de execução do serviço. Formato da Resposta: "Prazo Base<br/>(0%)", "Mais Rápido (-50%)<br/>(aprox.)", "Mais Lento (+30%)<br/>(aprox.)".
-                - **pros:** Liste em bullet points os benefícios técnicos e práticos mais relevantes.
-                - **cons:** Liste em bullet points os pontos negativos e os riscos técnicos. Seja específico.
-                - **recommendation:** Sintetize sua análise em uma única frase conclusiva. Use frases-chave como: "Melhor custo-benefício para...", "Ideal se o prazo for crítico...", "Recomendado para durabilidade máxima...".
+                - Gere de uma a duas "Alternativas" que sejam soluções técnicas viáveis e comuns no mercado.
+           - **Preenchimento das Colunas (Lógica Detalhada e Obrigatória):** Para cada solução (a atual e as alternativas), você **DEVE OBRIGATORIAMENTE PREENCHER TODAS as colunas abaixo.** Não deixe nenhum campo em branco. Seja técnico e objetivo.
+                - **solution:** Título curto e claro.
+                - **relativeCost:** Estime a variação percentual do custo. Formato da Resposta: "Custo Base (0%)", "Custo Alto (+40%)", "Custo Baixo (-15%)".
+                - **deadlineImpact:** Estime o impacto no tempo de execução. Formato da Resposta: "Prazo Base (0%)", "Mais Rápido (-50%)", "Mais Lento (+30%)".
+                - **pros:** Liste em bullet points os benefícios.
+                - **cons:** Liste em bullet points os pontos negativos.
+                - **recommendation:** Sintetize sua análise em uma única frase conclusiva.
         
         **Formato de Saída Obrigatório:**
-        Responda APENAS com um único objeto JSON válido e completo, seguindo estritamente a estrutura do exemplo abaixo.
+        Responda APENAS com um único objeto JSON válido e completo, seguindo estritamente a estrutura do exemplo abaixo. NÃO inclua nenhum texto, explicação ou formatação markdown como \`\`\`json \`\`\` antes ou depois do objeto JSON.
 
         **Exemplo da Estrutura JSON de Saída Completa:**
-        \`\`\`json
         {
           "refinementSuggestions": [
             {
@@ -257,26 +266,25 @@ export const getRefinementAndValueEngineeringSuggestions = async (
               "itemName": "Instalação de piso vinílico",
               "options": [
                 {
-                  "solution": "Solução Atual:<br/>Vinílico Colado 3mm",
-                  "relativeCost": "Custo Base<br/>(0%)",
-                  "deadlineImpact": "Prazo Base<br/>(0%)",
+                  "solution": "Solução Atual: Vinílico Colado 3mm",
+                  "relativeCost": "Custo Base (0%)",
+                  "deadlineImpact": "Prazo Base (0%)",
                   "pros": ["Excelente durabilidade", "Melhor acústica"],
                   "cons": ["Custo de material mais elevado", "Instalação mais lenta"],
-                  "recommendation": "Recomendação do Engenheiro: Ótima escolha para áreas de alto tráfego."
+                  "recommendation": "Ótima escolha para áreas de alto tráfego."
                 },
                 {
-                  "solution": "Alternativa 1:<br/>Piso Vinílico Clicado 5mm",
-                  "relativeCost": "Custo Alto (+40%)<br/>(aprox.)",
-                  "deadlineImpact": "Mais Rápido (-50%)<br/>(aprox.)",
+                  "solution": "Alternativa 1: Piso Vinílico Clicado 5mm",
+                  "relativeCost": "Custo Alto (+40%)",
+                  "deadlineImpact": "Mais Rápido (-50%)",
                   "pros": ["Instalação muito rápida", "Pode ser reinstalado"],
                   "cons": ["Custo do material significativamente maior"],
-                  "recommendation": "Recomendação do Engenheiro: Ideal se o prazo for o fator mais crítico."
+                  "recommendation": "Ideal se o prazo for o fator mais crítico."
                 }
               ]
             }
           ]
         }
-        \`\`\`
     `;
 
     try {
@@ -299,8 +307,12 @@ export const getRefinementAndValueEngineeringSuggestions = async (
         const jsonData: RefinementAndValueEngineeringOutput = JSON.parse(textToParse);
 
         if (!jsonData.refinementSuggestions || !jsonData.valueEngineeringAnalysis) {
-            throw new Error("Resposta da IA inválida. Estrutura de sugestões não encontrada.");
+            throw new Error("Resposta da IA inválida. Estrutura de sugestões ou engenharia de valor não encontrada.");
         }
+        
+        // Data integrity check to prevent crashes on frontend
+        jsonData.valueEngineeringAnalysis = (jsonData.valueEngineeringAnalysis || []).filter(a => a && a.itemId && a.itemName && a.options);
+
 
         return jsonData;
 
