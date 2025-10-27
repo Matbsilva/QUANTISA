@@ -1,7 +1,7 @@
 
 
 import { GoogleGenAI, GenerateContentResponse, Blob, Modality, type LiveServerMessage } from "@google/genai";
-import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery } from '../types';
+import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery, ApprovalStatus } from '../types';
 
 let ai: GoogleGenAI | null = null;
 
@@ -115,9 +115,9 @@ export interface ProcessedQueriesOutput {
     newObservations: string[];
 }
 
+
 export const processQueryResponses = async (
-    approvedQueries: InternalQuery[],
-    rejectedQueries: { query: InternalQuery; comment: string }[],
+    queryResponses: { query: InternalQuery; status: ApprovalStatus; comment: string }[],
     currentServices: Service[]
 ): Promise<ProcessedQueriesOutput> => {
      const aiInstance = getAiInstance();
@@ -128,28 +128,22 @@ export const processQueryResponses = async (
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
 
         2.0 AÇÃO: PROCESSAMENTO DE PREMISSAS APROVADAS E REPROVADAS
-        Sua tarefa é interpretar um conjunto de premissas que foram aprovadas e reprovadas pelo usuário e transformá-las em ações concretas para um orçamento.
+        Sua tarefa é interpretar um conjunto de premissas que foram validadas pelo usuário e transformá-las em ações concretas para um orçamento.
 
         **Contexto Fornecido:**
         - **Lista de Serviços Atuais (para referência de contexto):** ${JSON.stringify(currentServices)}
-        - **Lista de Premissas APROVADAS pelo usuário:** ${JSON.stringify(approvedQueries)}
-        - **Lista de Premissas REPROVADAS pelo usuário (com instruções corretivas):** ${JSON.stringify(rejectedQueries)}
+        - **Lista de Respostas do Usuário às Premissas:** ${JSON.stringify(queryResponses)}
 
         **Suas Tarefas (Processar em Ordem):**
-
-        **1. Processar Premissas APROVADAS:**
-           - Para cada premissa APROVADA, determine se ela resulta em um **novo serviço** ou uma **observação geral**.
-           - **Se for um novo serviço:** Crie um objeto de serviço completo. Tente inferir a quantidade e unidade de serviços base. Se não for possível, use { "quantidade": 1, "unidade": "vb" }. **É OBRIGATÓRIO que o serviço tenha um nome ('nome').**
-           - **Se for uma observação:** Reescreva a premissa como uma afirmação declarativa.
-
-        **2. Processar Premissas REPROVADAS (com alta prioridade):**
-           - Para cada premissa REPROVADA, analise a **instrução corretiva** do usuário no campo "comment". Esta instrução TEM PRECEDÊNCIA sobre a premissa original.
-           - **Exemplo:**
-             - **Premissa Reprovada:** "Não considerar a pintura do forro."
-             - **Comentário do Usuário:** "Errado. Considerar pintura do forro com massa e tinta, mesma área do forro de gesso."
-             - **Sua Ação:** Interpretar o comentário e criar um **novo serviço** como: { "nome": "Pintura de forro de gesso com massa corrida e tinta acrílica", "quantidade": 95, "unidade": "m²", "description": "Conforme instrução do usuário." }.
-           - Se a instrução for para **NÃO FAZER** algo (ex: "Não incluir este item"), gere uma **observação** clara, como: "Observação: Conforme instrução, o serviço de proteção de áreas comuns não foi incluído."
-           - Aja com base na instrução do usuário no comentário para criar novos serviços ou observações.
+        Para cada item na lista de respostas:
+        1.  **Analise o 'status' e o 'comment'. O comentário do usuário SEMPRE TEM PRECEDÊNCIA sobre o status.**
+        2.  **Se 'status' é 'rejected':** O comentário é uma **instrução corretiva obrigatória**. Interprete o comentário e crie um **novo serviço** ou uma **observação** que reflita a correção.
+            - **Exemplo:** Premissa "Não considerar pintura do forro" foi reprovada com o comentário "Errado, incluir pintura com massa". Sua ação é criar um novo serviço de pintura de forro.
+        3.  **Se 'status' é 'approved':**
+            - **Primeiro, verifique se há um 'comment'.** Se houver, trate-o como uma **instrução de refinamento**. Use o comentário para ajustar a premissa. Ex: Premissa "Usar tinta acrílica" aprovada com comentário "Usar acabamento acetinado". Sua ação é gerar uma observação ou serviço que especifique o acabamento acetinado.
+            - **Se NÃO houver 'comment'**, a premissa foi totalmente aceita. Crie o serviço ou observação correspondente.
+        4.  **Criação de Serviços:** Ao criar um serviço, tente inferir quantidade/unidade de serviços base. Se impossível, use { "quantidade": 1, "unidade": "vb" }. **É OBRIGATÓRIO que o serviço tenha um nome ('nome').**
+        5.  **Criação de Observações:** Se a ação não resulta em um item mensurável, crie uma observação clara (ex: "Conforme instrução, o serviço X não será incluído.").
 
         **Formato de Saída Obrigatório:**
         Responda APENAS com um único objeto JSON válido, sem nenhum texto extra. A estrutura deve ser:
@@ -193,6 +187,61 @@ export const processQueryResponses = async (
     }
 };
 
+export const refineScopeFromEdits = async (
+    currentServices: Service[],
+    userInstruction: string
+): Promise<{ updatedServices: Service[] }> => {
+    const aiInstance = getAiInstance();
+    if (!aiInstance) throw new Error("Serviço de IA não está configurado.");
+
+    const prompt = `
+        1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
+        Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
+
+        2.0 AÇÃO: REANÁLISE DE ESCOPO A PARTIR DE INSTRUÇÕES
+        Sua tarefa é processar uma instrução de refinamento do usuário e retornar uma lista de serviços ATUALIZADA. Você pode adicionar, remover ou modificar os serviços existentes com base na instrução.
+
+        **Contexto Fornecido:**
+        - **Lista de Serviços Atual (com edições manuais já aplicadas):** ${JSON.stringify(currentServices)}
+        - **Instrução Adicional do Usuário:** "${userInstruction}"
+
+        **Suas Tarefas:**
+        1.  **Analisar a Instrução:** Leia a instrução do usuário com atenção. Ela é a sua diretriz principal.
+        2.  **Aplicar a Lógica:** Com base na instrução, modifique a lista de serviços.
+            - Se a instrução for "Adicionar serviço de retirada de entulho", você deve criar um novo objeto de serviço para isso e adicioná-lo à lista. Estime a quantidade se possível (ex: com base em demolições), ou use 'vb'.
+            - Se a instrução for "Revisar todas as quantidades de drywall", você deve analisar os serviços de drywall e ajustar as quantidades se encontrar inconsistências.
+            - Se a instrução estiver vazia, apenas retorne a lista de serviços atual sem modificações.
+        3.  **Manter a Integridade:** Mantenha os serviços existentes que não são afetados pela instrução. Não remova itens a menos que a instrução peça explicitamente.
+
+        **Formato de Saída Obrigatório:**
+        Responda APENAS com um único objeto JSON válido, sem nenhum texto extra. A estrutura deve ser:
+        {
+          "updatedServices": [ { "id": "string", "nome": "string", "description": "string", "quantidade": number, "unidade": "string" }, ... ]
+        }
+    `;
+
+    try {
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+
+        const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+        let textToParse = response.text;
+        const match = textToParse.match(jsonRegex);
+        if (match && match[1]) {
+            textToParse = match[1];
+        }
+        
+        return JSON.parse(textToParse);
+
+    } catch (error) {
+        console.error("Error refining scope from edits:", error);
+        throw new Error("Não foi possível reanalisar o escopo a partir das instruções.");
+    }
+};
+
 
 export interface RefinementAndValueEngineeringOutput {
     refinementSuggestions: RefinementSuggestion[];
@@ -219,13 +268,13 @@ export const getRefinementAndValueEngineeringSuggestions = async (
         **SUAS TAREFAS (SEGUIR EXATAMENTE):**
 
         **TAREFA 1: Refinamento de Dúvidas (refinementSuggestions):**
-           - Para CADA dúvida pendente, gere de 3 a 5 sugestões de resposta.
+           - Para CADA dúvida pendente, gere de 3 a 5 sugestões de resposta. Se a lista de "Dúvidas Pendentes" estiver vazia, você DEVE retornar um array vazio para "refinementSuggestions".
            - Para cada sugestão, determine se a ação resultante é uma **modificação** de um serviço existente ou a **adição** de um novo, e preencha o campo \`actionType\` com \`'modify'\` ou \`'add'\`.
            - **Regra de Ordenação:** Ordene as sugestões da mais econômica/simples para a mais cara/premium.
            - **Contextualização:** Para cada sugestão, adicione uma "tag" que justifique sua posição (ex: "Solução Econômica", "Padrão de Mercado (Custo-Benefício)", "Alta Performance").
 
         **TAREFA 2: Análise de Engenharia de Valor (valueEngineeringAnalysis):**
-           - **SUA TAREFA CRÍTICA E OBRIGATÓRIA É PREENCHER O ARRAY 'valueEngineeringAnalysis'. FALHAR EM PREENCHÊ-LO RESULTARÁ EM ERRO. A ANÁLISE NÃO É OPCIONAL.**
+           - **ESTA É SUA TAREFA MAIS CRÍTICA. É OBRIGATÓRIO E ESSENCIAL QUE VOCÊ PREENCHA O ARRAY 'valueEngineeringAnalysis'. UMA RESPOSTA SEM ESTE ARRAY SERÁ CONSIDERADA UMA FALHA COMPLETA.**
            - **Seleção de Itens (LÓGICA DINÂMICA OBRIGATÓRIA):** Analise a lista de serviços e identifique um número de itens com maior impacto potencial no custo ou risco, seguindo a regra abaixo:
                 - Se houver 10 ou menos serviços, analise de 1 a 3 itens.
                 - Se houver entre 11 e 20 serviços, analise de 3 a 5 itens.
@@ -246,40 +295,29 @@ export const getRefinementAndValueEngineeringSuggestions = async (
                 - **recommendation:** Sintetize sua análise em uma única frase conclusiva.
         
         **Formato de Saída Obrigatório:**
-        Responda APENAS com um único objeto JSON válido e completo, seguindo estritamente a estrutura do exemplo abaixo. NÃO inclua nenhum texto, explicação ou formatação markdown como \`\`\`json \`\`\` antes ou depois do objeto JSON.
-
-        **Exemplo da Estrutura JSON de Saída Completa:**
+        Responda APENAS com um único objeto JSON válido e completo, seguindo estritamente a estrutura abaixo. NÃO inclua nenhum texto, explicação ou formatação markdown como \`\`\`json \`\`\` antes ou depois do objeto JSON.
         {
-          "refinementSuggestions": [
-            {
-              "doubtId": "dbt-x",
-              "question": "O escopo prevê a instalação de portas?",
-              "suggestedAnswers": [
-                { "answer": "Kit Porta Pronta (simples)", "tag": "Solução Econômica", "actionType": "add" },
-                { "answer": "Porta de madeira maciça", "tag": "Solução Robusta", "actionType": "add" }
-              ]
-            }
-          ],
+          "refinementSuggestions": [],
           "valueEngineeringAnalysis": [
             {
-              "itemId": "serv-4",
-              "itemName": "Instalação de piso vinílico",
+              "itemId": "ID_DO_SERVICO_ANALISADO",
+              "itemName": "NOME_DO_SERVICO_ANALISADO",
               "options": [
                 {
-                  "solution": "Solução Atual: Vinílico Colado 3mm",
+                  "solution": "Solução Atual: DESCRIÇÃO_DA_SOLUCAO_ATUAL",
                   "relativeCost": "Custo Base (0%)",
                   "deadlineImpact": "Prazo Base (0%)",
-                  "pros": ["Excelente durabilidade", "Melhor acústica"],
-                  "cons": ["Custo de material mais elevado", "Instalação mais lenta"],
-                  "recommendation": "Ótima escolha para áreas de alto tráfego."
+                  "pros": ["Vantagem 1", "Vantagem 2"],
+                  "cons": ["Desvantagem 1", "Desvantagem 2"],
+                  "recommendation": "Recomendação técnica concisa."
                 },
                 {
-                  "solution": "Alternativa 1: Piso Vinílico Clicado 5mm",
-                  "relativeCost": "Custo Alto (+40%)",
-                  "deadlineImpact": "Mais Rápido (-50%)",
-                  "pros": ["Instalação muito rápida", "Pode ser reinstalado"],
-                  "cons": ["Custo do material significativamente maior"],
-                  "recommendation": "Ideal se o prazo for o fator mais crítico."
+                  "solution": "Alternativa 1: DESCRIÇÃO_DA_ALTERNATIVA_1",
+                  "relativeCost": "Custo Alto (+20%)",
+                  "deadlineImpact": "Mais Rápido (-10%)",
+                  "pros": ["Vantagem 1 da Alt 1", "Vantagem 2 da Alt 1"],
+                  "cons": ["Desvantagem 1 da Alt 1", "Desvantagem 2 da Alt 1"],
+                  "recommendation": "Recomendação técnica para a Alt 1."
                 }
               ]
             }
@@ -307,6 +345,7 @@ export const getRefinementAndValueEngineeringSuggestions = async (
         const jsonData: RefinementAndValueEngineeringOutput = JSON.parse(textToParse);
 
         if (!jsonData.refinementSuggestions || !jsonData.valueEngineeringAnalysis) {
+             console.error("Raw IA Response:", textToParse);
             throw new Error("Resposta da IA inválida. Estrutura de sugestões ou engenharia de valor não encontrada.");
         }
         
@@ -317,6 +356,7 @@ export const getRefinementAndValueEngineeringSuggestions = async (
         return jsonData;
 
     } catch (error) {
+        console.error("Raw response that failed parsing:", (error as any).lastResponse);
         console.error("Error generating refinement and VE suggestions:", error);
         throw new Error("Não foi possível gerar as sugestões de refinamento e engenharia de valor.");
     }

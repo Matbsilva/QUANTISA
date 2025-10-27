@@ -6,7 +6,7 @@ import React from 'react';
 import type { Project, Service, InternalQueryApproval, ApprovalStatus, RefinementSuggestion, InternalQuery } from '../types';
 import { Button, TrashIcon, PlusIcon, ClipboardIcon, DownloadIcon, Spinner, ArrowLeftIcon, Modal } from './Shared';
 import { KanbanStatus } from '../types';
-import { getDetailedScope, getRefinementAndValueEngineeringSuggestions, processQueryResponses } from '../services/geminiService';
+import { getDetailedScope, getRefinementAndValueEngineeringSuggestions, processQueryResponses, refineScopeFromEdits } from '../services/geminiService';
 
 const STEPS = [
     { name: "Resumo", index: 0 },
@@ -349,13 +349,13 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
                         <tbody>
                             {editedItems.map(item => (
                                 <tr key={item.id} className="border-t dark:border-gray-600">
-                                    <td className="p-2 font-medium">{item.nome || "Serviço não identificado"}</td>
+                                    <td className="p-2 font-medium text-gray-900 dark:text-gray-200">{item.nome || "Serviço não identificado"}</td>
                                     <td className="p-2">
                                         <input
                                             type="number"
                                             value={item.quantidade}
                                             onChange={e => handleItemChange(item.id, 'quantidade', parseFloat(e.target.value) || 0)}
-                                            className="w-full bg-white dark:bg-gray-800 p-1 rounded border border-gray-300 dark:border-gray-500"
+                                            className="w-full bg-white dark:bg-gray-800 p-1 rounded border border-gray-300 dark:border-gray-500 dark:text-gray-200"
                                         />
                                     </td>
                                     <td className="p-2">
@@ -363,7 +363,7 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
                                             type="text"
                                             value={item.unidade}
                                             onChange={e => handleItemChange(item.id, 'unidade', e.target.value)}
-                                            className="w-full bg-white dark:bg-gray-800 p-1 rounded border border-gray-300 dark:border-gray-500"
+                                            className="w-full bg-white dark:bg-gray-800 p-1 rounded border border-gray-300 dark:border-gray-500 dark:text-gray-200"
                                         />
                                     </td>
                                 </tr>
@@ -387,6 +387,8 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
     const [isGeneratingSuggestions, setIsGeneratingSuggestions] = React.useState(false);
     const [areDefinitionsApplied, setAreDefinitionsApplied] = React.useState(!!(project.refinementSuggestions || project.valueEngineeringAnalysis));
     const [isRefinementApplied, setIsRefinementApplied] = React.useState(false);
+    const [isEditing, setIsEditing] = React.useState(false);
+    const [editInstruction, setEditInstruction] = React.useState('');
 
 
     const handleServiceChange = (id: string, field: 'quantidade' | 'unidade', value: string | number) => {
@@ -405,13 +407,12 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
     };
 
     const handleCommentChange = (queryId: string, comment: string) => {
-        const currentApproval = project.internalQueryApprovals?.[queryId];
-        if (currentApproval) {
-            const newApproval: InternalQueryApproval = { ...currentApproval, comment };
-            const newApprovals = { ...project.internalQueryApprovals, [queryId]: newApproval };
-            updateProject({ ...project, internalQueryApprovals: newApprovals });
-        }
+        const currentApproval = project.internalQueryApprovals?.[queryId] || { status: null, comment: '' };
+        const newApproval: InternalQueryApproval = { ...currentApproval, comment };
+        const newApprovals = { ...project.internalQueryApprovals, [queryId]: newApproval };
+        updateProject({ ...project, internalQueryApprovals: newApprovals });
     };
+
 
     React.useEffect(() => {
         if (areDefinitionsApplied && !project.refinementSuggestions && !isGeneratingSuggestions) {
@@ -465,39 +466,45 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
     const handleApplyDefinitions = async () => {
         setIsApplyingDefinitions(true);
         try {
-            const approvedQueries = (project.internalQueries || []).filter(
-                q => project.internalQueryApprovals?.[q.id]?.status === 'approved'
-            );
-            
-            const rejectedQueriesWithComments = (project.internalQueries || [])
-                .filter(q => project.internalQueryApprovals?.[q.id]?.status === 'rejected' && project.internalQueryApprovals?.[q.id]?.comment.trim() !== '')
-                .map(q => ({ query: q, comment: project.internalQueryApprovals![q.id].comment }));
+            if (isEditing) {
+                const result = await refineScopeFromEdits(project.detailedServices || [], editInstruction);
+                updateProject({ ...project, detailedServices: result.updatedServices });
+                setAreDefinitionsApplied(true);
+                setIsEditing(false);
+                setEditInstruction('');
+                showToast("Escopo reanalisado com sucesso!");
 
-            const processedData = await processQueryResponses(
-                approvedQueries, 
-                rejectedQueriesWithComments,
-                project.detailedServices || []
-            );
+            } else {
+                const queryResponses = (project.internalQueries || [])
+                    .filter(q => project.internalQueryApprovals?.[q.id]?.status)
+                    .map(q => ({
+                        query: q,
+                        status: project.internalQueryApprovals![q.id].status!,
+                        comment: project.internalQueryApprovals![q.id].comment || ''
+                    }));
+                
+                const processedData = await processQueryResponses(queryResponses, project.detailedServices || []);
+                
+                const updatedServices = [...(project.detailedServices || []), ...processedData.newServices];
+                const updatedObservations = [...(project.observations || []), ...processedData.newObservations];
+                
+                const remainingQueries = (project.internalQueries || []).filter(
+                    q => !project.internalQueryApprovals?.[q.id]?.status
+                );
+                
+                updateProject({
+                    ...project,
+                    detailedServices: updatedServices,
+                    observations: updatedObservations,
+                    internalQueries: remainingQueries, 
+                    refinementSuggestions: undefined,
+                    valueEngineeringAnalysis: undefined,
+                });
 
-            const updatedServices = [...(project.detailedServices || []), ...processedData.newServices];
-            const updatedObservations = [...(project.observations || []), ...processedData.newObservations];
-            
-            const remainingQueries = (project.internalQueries || []).filter(
-                q => !project.internalQueryApprovals?.[q.id]?.status
-            );
-            
-            updateProject({
-                ...project,
-                detailedServices: updatedServices,
-                observations: updatedObservations,
-                internalQueries: remainingQueries, 
-                refinementSuggestions: undefined,
-                valueEngineeringAnalysis: undefined,
-            });
-
-            setAreDefinitionsApplied(true);
-            setIsRefinementApplied(false); // Reset this state for the new flow
-            showToast("Definições aplicadas com sucesso!");
+                setAreDefinitionsApplied(true);
+                setIsRefinementApplied(false);
+                showToast("Definições aplicadas com sucesso!");
+            }
 
         } catch (e) {
             console.error("Erro ao aplicar definições:", e);
@@ -508,11 +515,14 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
     };
 
     const handleApplyRefinements = () => {
-        // Here you would typically send the final selections to a backend or AI service.
-        // For now, we'll just confirm the state is saved and allow advancing.
         setIsRefinementApplied(true);
         showToast("Seleções de refinamento salvas!");
     }
+
+    const handleEnterEditMode = () => {
+        setAreDefinitionsApplied(false);
+        setIsEditing(true);
+    };
 
 
     return (
@@ -570,6 +580,18 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 </div>
             </Quadrant>
             
+            {!areDefinitionsApplied && isEditing && (
+                <Quadrant title="Instruções Adicionais para Reanálise">
+                    <textarea
+                        value={editInstruction}
+                        onChange={(e) => setEditInstruction(e.target.value)}
+                        rows={3}
+                        className="w-full p-2 border rounded-md bg-white text-gray-900 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder-gray-400"
+                        placeholder="Ex: Adicionar serviço de retirada de entulho para a demolição..."
+                    />
+                </Quadrant>
+            )}
+
             {project.observations && project.observations.length > 0 && (
                 <Quadrant title="Observações Gerais do Projeto">
                      <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300 list-disc list-inside">
@@ -580,7 +602,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 </Quadrant>
             )}
 
-            {project.internalQueries && project.internalQueries.length > 0 && !areDefinitionsApplied && (
+            {project.internalQueries && project.internalQueries.length > 0 && !areDefinitionsApplied && !isEditing && (
                 <Quadrant title="Consultas Internas da IA (Premissas Adotadas)">
                      <div className="space-y-4">
                         <p className="text-sm text-gray-600 dark:text-gray-300">A IA encontrou respostas vagas e adotou as seguintes premissas. Revise, confirme ou corrija.</p>
@@ -606,15 +628,13 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                                             </Button>
                                         </div>
                                     </div>
-                                    {project.internalQueryApprovals?.[query.id]?.status === 'rejected' && (
-                                        <textarea
-                                            rows={1}
-                                            placeholder="Adicionar comentário ou correção..."
-                                            onBlur={(e) => handleCommentChange(query.id, e.target.value)}
-                                            defaultValue={project.internalQueryApprovals?.[query.id]?.comment || ''}
-                                            className="mt-2 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm bg-white text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 p-2"
-                                        />
-                                    )}
+                                    <textarea
+                                        rows={1}
+                                        placeholder="Adicionar comentário ou correção (opcional)..."
+                                        onBlur={(e) => handleCommentChange(query.id, e.target.value)}
+                                        defaultValue={project.internalQueryApprovals?.[query.id]?.comment || ''}
+                                        className="mt-2 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm bg-white text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 p-2"
+                                    />
                                 </li>
                             ))}
                         </ul>
@@ -764,7 +784,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                         variant='primary'
                         isLoading={isApplyingDefinitions}
                     >
-                        Aplicar Definições e Gerar Sugestões
+                        Aplicar Definições ao Escopo
                     </Button>
                  ) : (
                     <div className="flex flex-col items-center gap-4">
@@ -784,7 +804,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                            Avançar para Mapeamento →
                        </Button>
                         <Button 
-                           onClick={() => setAreDefinitionsApplied(false)} 
+                           onClick={handleEnterEditMode}
                            size="sm" 
                            variant='ghost'
                            className="mt-2"
