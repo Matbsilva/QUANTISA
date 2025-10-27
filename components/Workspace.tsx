@@ -311,7 +311,14 @@ const Step1Analysis = ({ project, onComplete, showToast }: { project: Project, o
 const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: { project: Project, onComplete: () => void, updateProject: (project: Project) => void, showToast: (message: string) => void }) => {
     const [isApplyingDefinitions, setIsApplyingDefinitions] = React.useState(false);
     const [isGeneratingSuggestions, setIsGeneratingSuggestions] = React.useState(false);
-    const [areDefinitionsApplied, setAreDefinitionsApplied] = React.useState(false);
+    const [areDefinitionsApplied, setAreDefinitionsApplied] = React.useState(!!(project.refinementSuggestions || project.valueEngineeringAnalysis));
+
+    const handleServiceChange = (id: string, field: 'quantidade' | 'unidade', value: string | number) => {
+        const updatedServices = (project.detailedServices || []).map(s => 
+            s.id === id ? { ...s, [field]: value } : s
+        );
+        updateProject({ ...project, detailedServices: updatedServices });
+    };
     
     const handleApprovalAction = (queryId: string, status: ApprovalStatus) => {
         const currentApproval = project.internalQueryApprovals?.[queryId] || { status: null, comment: '' };
@@ -385,23 +392,29 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
             const approvedQueries = (project.internalQueries || []).filter(
                 q => project.internalQueryApprovals?.[q.id]?.status === 'approved'
             );
+            
+            const rejectedQueries = (project.internalQueries || []).filter(
+                q => project.internalQueryApprovals?.[q.id]?.status === 'rejected'
+            );
 
-            if (approvedQueries.length === 0) {
-                showToast("Nenhuma premissa aprovada para aplicar.");
-                setAreDefinitionsApplied(true); // Allow proceeding even if nothing to apply
-                return;
-            }
-
-            const processedData = await processApprovedQueries(approvedQueries);
+            // Even if no queries were approved, we might have manual edits to the service list, so we proceed.
+            const processedData = approvedQueries.length > 0 
+                ? await processApprovedQueries(approvedQueries, project.detailedServices || [])
+                : { newServices: [], newObservations: [] };
 
             const updatedServices = [...(project.detailedServices || []), ...processedData.newServices];
             const updatedObservations = [...(project.observations || []), ...processedData.newObservations];
+            
+            // Filter out queries that have been addressed (approved or rejected)
+            const remainingQueries = (project.internalQueries || []).filter(
+                q => !project.internalQueryApprovals?.[q.id]?.status
+            );
             
             updateProject({
                 ...project,
                 detailedServices: updatedServices,
                 observations: updatedObservations,
-                internalQueries: [], // Clear queries after processing
+                internalQueries: remainingQueries, 
                 refinementSuggestions: undefined, // Reset to trigger re-generation
                 valueEngineeringAnalysis: undefined,
             });
@@ -449,8 +462,16 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                                                         </p>
                                                     )}
                                                 </td>
-                                                <td className="p-3 text-center text-gray-600 dark:text-gray-300 align-top">{service.quantidade}</td>
-                                                <td className="p-3 text-center text-gray-600 dark:text-gray-300 align-top">{service.unidade}</td>
+                                                <td className="p-3 text-center text-gray-600 dark:text-gray-300 align-top">
+                                                    {!areDefinitionsApplied ? (
+                                                        <input type="number" value={service.quantidade} onChange={e => handleServiceChange(service.id, 'quantidade', parseFloat(e.target.value))} className="w-full bg-transparent p-1 rounded focus:bg-gray-100 dark:focus:bg-gray-700 outline-none text-center" />
+                                                    ) : service.quantidade}
+                                                </td>
+                                                <td className="p-3 text-center text-gray-600 dark:text-gray-300 align-top">
+                                                     {!areDefinitionsApplied ? (
+                                                        <input type="text" value={service.unidade} onChange={e => handleServiceChange(service.id, 'unidade', e.target.value)} className="w-full bg-transparent p-1 rounded focus:bg-gray-100 dark:focus:bg-gray-700 outline-none text-center" />
+                                                    ) : service.unidade}
+                                                </td>
                                             </tr>
                                         </React.Fragment>
                                     ))}
@@ -475,7 +496,7 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                 </Quadrant>
             )}
 
-            {project.internalQueries && project.internalQueries.length > 0 && (
+            {project.internalQueries && project.internalQueries.length > 0 && !areDefinitionsApplied && (
                 <Quadrant title="Consultas Internas da IA (Premissas Adotadas)">
                      <div className="space-y-4">
                         <p className="text-sm text-gray-600 dark:text-gray-300">A IA encontrou respostas vagas e adotou as seguintes premissas. Revise, confirme ou corrija.</p>
@@ -522,7 +543,7 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                 <div className="flex flex-col items-center justify-center text-center p-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                     <Spinner className="w-8 h-8 mb-4" />
                     <h3 className="text-lg font-semibold dark:text-white">Processando Definições...</h3>
-                    <p className="text-gray-600 dark:text-gray-400">A IA está interpretando suas aprovações.</p>
+                    <p className="text-gray-600 dark:text-gray-400">A IA está interpretando suas aprovações e edições.</p>
                 </div>
             )}
             
@@ -652,18 +673,16 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
 
 
             <div className="p-4 border-t dark:border-gray-700 flex flex-col items-center gap-4 mt-6">
-                 {!areDefinitionsApplied && (
+                 {!areDefinitionsApplied ? (
                      <Button 
                         onClick={handleApplyDefinitions} 
                         size="lg" 
                         variant='primary'
                         isLoading={isApplyingDefinitions}
                     >
-                        Aplicar Definições ao Escopo
+                        Aplicar Definições e Gerar Sugestões
                     </Button>
-                 )}
-                
-                {areDefinitionsApplied && (
+                 ) : (
                      <Button 
                         onClick={() => setAreDefinitionsApplied(false)} 
                         size="lg" 
@@ -672,7 +691,7 @@ const Step2DetailedScope = ({ project, onComplete, updateProject, showToast }: {
                         Alterar Definições
                     </Button>
                 )}
-
+                
                 <Button 
                     onClick={onComplete} 
                     size="lg" 

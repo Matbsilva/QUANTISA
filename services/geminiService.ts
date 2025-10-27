@@ -58,7 +58,7 @@ export const getDetailedScope = async (
         **Suas Tarefas:**
         1.  **Análise Crítica:** Analise as respostas do cliente. Para cada dúvida, determine se a resposta foi clara e suficiente.
         2.  **Enriquecer Descrição:** Se a resposta for clara, utilize a informação para enriquecer o campo "description" do serviço correspondente. A descrição deve ser técnica e focar no **ESCOPO** (o quê será entregue), não no processo (como será feito).
-        3.  **Criar Consultas Internas:** Se uma resposta do cliente for vaga, incompleta, ou implicar uma nova premissa, crie uma "Consulta Interna" (internalQueries) para o usuário do aplicativo validar.
+        3.  **Criar Consultas Internas com Premissas:** Se uma resposta do cliente for vaga, incompleta, ou implicar uma nova premissa técnica/logística, crie uma "Consulta Interna" (internalQueries). **IMPORTANTE:** A consulta deve ser uma pergunta seguida de uma premissa sugerida para validação. Exemplo: "As dimensões do elevador não foram informadas. Assumir que o elevador comporta chapas de drywall sem necessidade de corte ou içamento manual?".
         4.  **Identificar Dúvidas Pendentes:** Se uma dúvida não foi respondida de forma alguma, adicione-a à lista de "pendingDoubts".
 
         **Formato de Saída Obrigatório:**
@@ -110,7 +110,7 @@ export interface ProcessedQueriesOutput {
     newObservations: string[];
 }
 
-export const processApprovedQueries = async (approvedQueries: InternalQuery[]): Promise<ProcessedQueriesOutput> => {
+export const processApprovedQueries = async (approvedQueries: InternalQuery[], currentServices: Service[]): Promise<ProcessedQueriesOutput> => {
      const aiInstance = getAiInstance();
     if (!aiInstance) throw new Error("Serviço de IA não está configurado.");
     
@@ -121,7 +121,7 @@ export const processApprovedQueries = async (approvedQueries: InternalQuery[]): 
         Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
         *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
         *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
-        *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
+        *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralize qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
         *   Precisão como Vantagem Competitiva: Seu trabalho é apurar os custos com a máxima precisão possível. Isso permite negociar com mais agressividade, ter uma margem de lucro clara e ganhar mais projetos por apresentar propostas tecnicamente superiores e financeiramente mais seguras.
         *   Consultor, Não Calculista: Você atua como um consultor técnico para o seu cliente (eu), explicando o "porquê" de cada decisão, educando sobre os riscos e guiando para a melhor solução técnica e comercial.
 
@@ -129,16 +129,17 @@ export const processApprovedQueries = async (approvedQueries: InternalQuery[]): 
         Sua tarefa é interpretar um conjunto de premissas que foram aprovadas e transformá-las em ações concretas para um orçamento.
 
         **Contexto Fornecido:**
+        - **Lista de Serviços Atuais (para referência de contexto):** ${JSON.stringify(currentServices)}
         - **Lista de Premissas Aprovadas:** ${JSON.stringify(approvedQueries)}
 
         **Suas Tarefas:**
         1.  **Análise de Intenção:** Para cada premissa na lista, analise o texto e determine se ele representa:
             a) A criação de um **novo serviço** que não existia antes.
             b) Uma **observação geral** sobre o projeto (uma condição, uma premissa de execução, etc.).
-        2.  **Geração de Novos Serviços:** Se uma premissa representa um novo serviço, você deve criar um objeto de serviço completo.
-            - **nome:** Crie um nome de serviço claro e conciso (ex: "Instalação de rodapés de poliestireno").
+        2.  **Geração de Novos Serviços (com Inteligência):** Se uma premissa representa um novo serviço, você deve criar um objeto de serviço completo.
+            - **nome:** Crie um nome de serviço claro e conciso (ex: "Aplicação de autonivelante cimentício").
             - **description:** Escreva uma descrição técnica para o serviço.
-            - **quantidade e unidade:** Se a premissa não fornecer uma quantidade/unidade clara, ESTIME um valor plausível e use 'vb' (verba) como unidade. Ex: { "quantidade": 1, "unidade": "vb" }. É crucial que você sempre forneça um valor.
+            - **quantidade e unidade:** **Se a premissa estiver relacionada a um serviço existente (ex: aplicar sobre um contrapiso), TENTE INFERIR a quantidade e unidade a partir do serviço de base.** Se não for possível, ESTIME um valor plausível e use 'vb' (verba) como unidade. Ex: { "quantidade": 1, "unidade": "vb" }. É crucial que você sempre forneça um valor.
         3.  **Geração de Observações:** Se a premissa for uma observação, reescreva a frase como uma afirmação declarativa.
             - **Exemplo de Entrada:** "As dimensões do elevador de serviço não foram informadas. Assumir que o elevador comporta chapas de drywall (2.40m ou 3.00m) e outros materiais de grandes dimensões sem necessidade de corte ou içamento manual?"
             - **Exemplo de Saída:** "Premissa: As dimensões do elevador de serviço não foram informadas; assume-se que o mesmo comporta chapas de drywall e outros materiais de grandes dimensões sem necessidade de corte ou içamento."
@@ -221,15 +222,18 @@ export const getRefinementAndValueEngineeringSuggestions = async (
            - **Contextualização:** Para cada sugestão, adicione uma "tag" que justifique sua posição (ex: "Solução Econômica", "Padrão de Mercado (Custo-Benefício)", "Alta Performance").
 
         **2. Análise de Engenharia de Valor (valueEngineeringAnalysis):**
-           - **Seleção de Itens:** Identifique de 1 a 3 itens com maior impacto potencial no custo.
-           - **Brainstorming e Geração de Alternativas:** Mantenha a especificação original como a primeira linha ("Solução Atual"). Gere de uma a duas alternativas técnicas que sejam soluções viáveis e comuns no mercado para o mesmo problema, pensando nos eixos de otimização (Velocidade, Performance, Custo).
-           - **Preenchimento das Colunas (Lógica Detalhada e Obrigatória):** Para cada solução, você DEVE OBRIGATORIAMENTE PREENCHER TODAS as colunas. Não deixe nenhum campo em branco.
-                - **solution:** Crie um título curto e claro, use <br/> para quebras de linha.
-                - **relativeCost:** Pense como um Engenheiro de Custos. Estime a variação percentual do custo total (material + mão de obra) da alternativa em relação à "Solução Atual". Formato da Resposta: "Custo Base<br/>(0%)", "Custo Alto (+40%)<br/>(aprox.)", "Custo Baixo (-15%)<br/>(aprox.)".
-                - **deadlineImpact:** Pense como um Engenheiro de Planejamento. Estime o impacto no tempo de execução do serviço. Formato da Resposta: "Prazo Base<br/>(0%)", "Mais Rápido (-50%)<br/>(aprox.)", "Mais Lento (+30%)<br/>(aprox.)".
+           - **É OBRIGATÓRIO E CRÍTICO que você execute esta análise.**
+           - **Seleção de Itens:** Analise a lista de serviços e identifique de 1 a 3 itens com maior impacto potencial no custo ou no risco técnico do projeto.
+           - **Geração de Alternativas:** Para cada item selecionado, você **DEVE** criar uma análise.
+                - A primeira opção **DEVE SER SEMPRE** a "Solução Atual", que é o serviço como descrito no escopo.
+                - Gere de uma a duas "Alternativas" que sejam soluções técnicas viáveis e comuns no mercado, pensando nos eixos de otimização (Velocidade, Performance, Custo).
+           - **Preenchimento das Colunas (Lógica Detalhada e Obrigatória):** Para cada solução (a atual e as alternativas), você **DEVE OBRIGATORIAMENTE PREENCHER TODAS as colunas abaixo.** Não deixe nenhum campo em branco. Seja técnico e quantitativo.
+                - **solution:** Título curto e claro. Use <br/> para quebras de linha se necessário.
+                - **relativeCost:** Estime a variação percentual do custo total (material + mão de obra) da alternativa em relação à "Solução Atual". Formato da Resposta: "Custo Base<br/>(0%)", "Custo Alto (+40%)<br/>(aprox.)", "Custo Baixo (-15%)<br/>(aprox.)".
+                - **deadlineImpact:** Estime o impacto no tempo de execução do serviço. Formato da Resposta: "Prazo Base<br/>(0%)", "Mais Rápido (-50%)<br/>(aprox.)", "Mais Lento (+30%)<br/>(aprox.)".
                 - **pros:** Liste em bullet points os benefícios técnicos e práticos mais relevantes.
                 - **cons:** Liste em bullet points os pontos negativos e os riscos técnicos. Seja específico.
-                - **recommendation:** Pense como um Consultor. Sintetize sua análise em uma única frase conclusiva. Use frases-chave como: "Melhor custo-benefício para...", "Ideal se o prazo for crítico...", "Recomendado para durabilidade máxima...".
+                - **recommendation:** Sintetize sua análise em uma única frase conclusiva. Use frases-chave como: "Melhor custo-benefício para...", "Ideal se o prazo for crítico...", "Recomendado para durabilidade máxima...".
         
         **Formato de Saída Obrigatório:**
         Responda APENAS com um único objeto JSON válido e completo, seguindo estritamente a estrutura do exemplo abaixo.
