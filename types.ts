@@ -139,13 +139,15 @@ export interface Message {
 
 export interface GroundingChunk {
   web?: {
-    uri: string;
-    title: string;
+    // FIX: Made uri and title optional to match the type from @google/genai SDK.
+    uri?: string;
+    title?: string;
   };
 }
 
 export interface GroundingMetadata {
-  groundingChunks: GroundingChunk[];
+  // FIX: Made groundingChunks optional to match the type from @google/genai SDK.
+  groundingChunks?: GroundingChunk[];
 }
 
 export interface SearchResult {

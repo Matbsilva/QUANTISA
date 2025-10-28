@@ -1,12 +1,10 @@
-
-
 "use client";
 
 import React from 'react';
 import type { Project, Service, InternalQueryApproval, ApprovalStatus, RefinementSuggestion, InternalQuery } from '../types';
 import { Button, TrashIcon, PlusIcon, ClipboardIcon, DownloadIcon, Spinner, ArrowLeftIcon, Modal } from './Shared';
 import { KanbanStatus } from '../types';
-import { getDetailedScope, getRefinementAndValueEngineeringSuggestions, processQueryResponses, refineScopeFromEdits } from '../services/geminiService';
+import { getDetailedScope, getRefinementSuggestions, getValueEngineeringAnalysis, processQueryResponses, refineScopeFromEdits } from '../services/geminiService';
 
 const STEPS = [
     { name: "Resumo", index: 0 },
@@ -314,14 +312,16 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
     isOpen: boolean;
     items: Service[];
     onClose: () => void;
-    onUpdate: (items: Service[]) => void;
+    onUpdate: (items: Service[], instruction: string) => void;
     onContinue: () => void;
 }) => {
     const [editedItems, setEditedItems] = React.useState<Service[]>([]);
+    const [instruction, setInstruction] = React.useState('');
 
     React.useEffect(() => {
         if (isOpen) {
             setEditedItems(JSON.parse(JSON.stringify(items))); // Deep copy
+            setInstruction('');
         }
     }, [isOpen, items]);
 
@@ -355,7 +355,7 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
                                             type="number"
                                             value={item.quantidade}
                                             onChange={e => handleItemChange(item.id, 'quantidade', parseFloat(e.target.value) || 0)}
-                                            className="w-full bg-white dark:bg-gray-800 p-1 rounded border border-gray-300 dark:border-gray-500 dark:text-gray-200"
+                                            className="w-full bg-white dark:bg-gray-900 p-1 rounded border border-gray-300 dark:border-gray-500 text-gray-900 dark:text-gray-200"
                                         />
                                     </td>
                                     <td className="p-2">
@@ -363,7 +363,7 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
                                             type="text"
                                             value={item.unidade}
                                             onChange={e => handleItemChange(item.id, 'unidade', e.target.value)}
-                                            className="w-full bg-white dark:bg-gray-800 p-1 rounded border border-gray-300 dark:border-gray-500 dark:text-gray-200"
+                                            className="w-full bg-white dark:bg-gray-900 p-1 rounded border border-gray-300 dark:border-gray-500 text-gray-900 dark:text-gray-200"
                                         />
                                     </td>
                                 </tr>
@@ -371,9 +371,19 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
                         </tbody>
                     </table>
                 </div>
+                 <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Instruções Adicionais (Opcional)</label>
+                    <textarea
+                        value={instruction}
+                        onChange={(e) => setInstruction(e.target.value)}
+                        rows={2}
+                        className="w-full p-2 border rounded-md bg-white text-gray-900 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+                        placeholder="Ex: Calcular o entulho gerado pelos itens da planilha..."
+                    />
+                </div>
                 <div className="flex justify-end space-x-2 pt-4">
                     <Button variant="secondary" onClick={onContinue}>Continuar Mesmo Assim</Button>
-                    <Button variant="primary" onClick={() => onUpdate(editedItems)}>Atualizar e Revisar</Button>
+                    <Button variant="primary" onClick={() => onUpdate(editedItems, instruction)}>Atualizar e Revisar</Button>
                 </div>
             </div>
         </Modal>
@@ -385,7 +395,7 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
 const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { project: Project, onAdvance: () => void, updateProject: (project: Project) => void, showToast: (message: string) => void }) => {
     const [isApplyingDefinitions, setIsApplyingDefinitions] = React.useState(false);
     const [isGeneratingSuggestions, setIsGeneratingSuggestions] = React.useState(false);
-    const [areDefinitionsApplied, setAreDefinitionsApplied] = React.useState(!!(project.refinementSuggestions || project.valueEngineeringAnalysis));
+    const [areDefinitionsApplied, setAreDefinitionsApplied] = React.useState(!!project.valueEngineeringAnalysis);
     const [isRefinementApplied, setIsRefinementApplied] = React.useState(false);
     const [isEditing, setIsEditing] = React.useState(false);
     const [editInstruction, setEditInstruction] = React.useState('');
@@ -413,21 +423,26 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
         updateProject({ ...project, internalQueryApprovals: newApprovals });
     };
 
-
     React.useEffect(() => {
-        if (areDefinitionsApplied && !project.refinementSuggestions && !isGeneratingSuggestions) {
+        if (areDefinitionsApplied && !project.valueEngineeringAnalysis && !isGeneratingSuggestions) {
             const generateSuggestions = async () => {
                 setIsGeneratingSuggestions(true);
                 try {
-                    const result = await getRefinementAndValueEngineeringSuggestions(
-                        project.detailedServices || [],
-                        project.pendingDoubts || []
-                    );
+                    // Step 1: Get Refinements
+                    const refinementResult = await getRefinementSuggestions(project.pendingDoubts || []);
                     updateProject({ 
                         ...project, 
-                        refinementSuggestions: result.refinementSuggestions,
-                        valueEngineeringAnalysis: result.valueEngineeringAnalysis
+                        refinementSuggestions: refinementResult.refinementSuggestions,
                     });
+
+                    // Step 2: Get Value Engineering
+                    const veResult = await getValueEngineeringAnalysis(project.detailedServices || []);
+                    updateProject({ 
+                        ...project, 
+                        refinementSuggestions: refinementResult.refinementSuggestions, // Carry over from previous update
+                        valueEngineeringAnalysis: veResult.valueEngineeringAnalysis
+                    });
+
                 } catch (e) {
                     console.error(e);
                     showToast(e instanceof Error ? e.message : "Erro ao gerar sugestões.");
@@ -468,7 +483,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
         try {
             if (isEditing) {
                 const result = await refineScopeFromEdits(project.detailedServices || [], editInstruction);
-                updateProject({ ...project, detailedServices: result.updatedServices });
+                updateProject({ ...project, detailedServices: result.updatedServices, valueEngineeringAnalysis: undefined, refinementSuggestions: undefined });
                 setAreDefinitionsApplied(true);
                 setIsEditing(false);
                 setEditInstruction('');
@@ -476,11 +491,10 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
 
             } else {
                 const queryResponses = (project.internalQueries || [])
-                    .filter(q => project.internalQueryApprovals?.[q.id]?.status)
                     .map(q => ({
                         query: q,
-                        status: project.internalQueryApprovals![q.id].status!,
-                        comment: project.internalQueryApprovals![q.id].comment || ''
+                        status: project.internalQueryApprovals?.[q.id]?.status || null,
+                        comment: project.internalQueryApprovals?.[q.id]?.comment || ''
                     }));
                 
                 const processedData = await processQueryResponses(queryResponses, project.detailedServices || []);
@@ -557,12 +571,12 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                                                     )}
                                                 </td>
                                                 <td className="p-3 text-center text-gray-600 dark:text-gray-300 align-top">
-                                                    {!areDefinitionsApplied ? (
+                                                    {isEditing ? (
                                                         <input type="number" value={service.quantidade} onChange={e => handleServiceChange(service.id, 'quantidade', parseFloat(e.target.value))} className="w-full bg-transparent p-1 rounded focus:bg-gray-100 dark:focus:bg-gray-700 outline-none text-center" />
                                                     ) : service.quantidade}
                                                 </td>
                                                 <td className="p-3 text-center text-gray-600 dark:text-gray-300 align-top">
-                                                     {!areDefinitionsApplied ? (
+                                                     {isEditing ? (
                                                         <input type="text" value={service.unidade} onChange={e => handleServiceChange(service.id, 'unidade', e.target.value)} className="w-full bg-transparent p-1 rounded focus:bg-gray-100 dark:focus:bg-gray-700 outline-none text-center" />
                                                     ) : service.unidade}
                                                 </td>
@@ -580,7 +594,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 </div>
             </Quadrant>
             
-            {!areDefinitionsApplied && isEditing && (
+            {isEditing && (
                 <Quadrant title="Instruções Adicionais para Reanálise">
                     <textarea
                         value={editInstruction}
@@ -659,16 +673,16 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 </div>
             )}
             
-            {areDefinitionsApplied && !isGeneratingSuggestions && project.refinementSuggestions && (
+            {areDefinitionsApplied && !isGeneratingSuggestions && project.refinementSuggestions && project.refinementSuggestions.length > 0 && (
                  <Quadrant title="Refinamento de Dúvidas Pendentes">
                     <div className="space-y-6">
-                        {project.refinementSuggestions.length > 0 ? project.refinementSuggestions.map(suggestion => (
+                        {project.refinementSuggestions.map(suggestion => (
                             <div key={suggestion.doubtId}>
                                 <label className="block text-sm font-medium text-gray-900 dark:text-gray-200">{suggestion.question}</label>
                                 <fieldset className="mt-2">
                                     <legend className="sr-only">Opções para {suggestion.question}</legend>
                                     <div className="space-y-2">
-                                        {suggestion.suggestedAnswers.map(opt => (
+                                        {(suggestion.suggestedAnswers || []).map(opt => (
                                             <div key={opt.answer} className="flex items-center">
                                                 <input
                                                     id={`${suggestion.doubtId}-${opt.answer}`}
@@ -711,7 +725,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                                     </div>
                                 </fieldset>
                             </div>
-                        )) : <p className="text-sm text-gray-500 dark:text-gray-400">Nenhuma dúvida pendente para refinar.</p>}
+                        ))}
                     </div>
                 </Quadrant>
             )}
@@ -770,14 +784,14 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                                 </div>
                             )
                          ))}
-                         {(project.valueEngineeringAnalysis || []).length === 0 && <p className="text-sm text-gray-500 dark:text-gray-400">Nenhuma oportunidade clara de engenharia de valor identificada para os itens de maior impacto.</p>}
+                         {(!project.valueEngineeringAnalysis || project.valueEngineeringAnalysis.length === 0) && <p className="text-sm text-gray-500 dark:text-gray-400">Nenhuma oportunidade clara de engenharia de valor identificada para os itens de maior impacto.</p>}
                     </div>
                 </Quadrant>
             )}
 
 
             <div className="p-4 border-t dark:border-gray-700 flex flex-col items-center gap-4 mt-6">
-                 {!areDefinitionsApplied ? (
+                 {(!areDefinitionsApplied && !isEditing) ? (
                      <Button 
                         onClick={handleApplyDefinitions} 
                         size="lg" 
@@ -786,7 +800,18 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                     >
                         Aplicar Definições ao Escopo
                     </Button>
-                 ) : (
+                 ) : null}
+                 {isEditing ? (
+                      <Button 
+                        onClick={handleApplyDefinitions} 
+                        size="lg" 
+                        variant='primary'
+                        isLoading={isApplyingDefinitions}
+                    >
+                        Aplicar Novas Definições e Reanalisar
+                    </Button>
+                 ) : null}
+                 {areDefinitionsApplied ? (
                     <div className="flex flex-col items-center gap-4">
                         <Button 
                            onClick={handleApplyRefinements} 
@@ -812,7 +837,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                            Alterar Definições Iniciais
                        </Button>
                    </div>
-                )}
+                ) : null}
             </div>
         </div>
     );
@@ -968,6 +993,30 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
         }
     };
 
+    const handleVerbaUpdate = async (updatedItems: Service[], instruction: string) => {
+        const newServices = (project.detailedServices || []).map(s => {
+            const updatedItem = updatedItems.find(u => u.id === s.id);
+            return updatedItem ? updatedItem : s;
+        });
+
+        if (instruction.trim()) {
+            setIsGenerating(true);
+             try {
+                const result = await refineScopeFromEdits(newServices, instruction);
+                updateProject({ ...project, detailedServices: result.updatedServices });
+                showToast("Itens e instruções aplicados com sucesso!");
+            } catch (e) {
+                showToast("Erro ao processar instrução adicional.");
+            } finally {
+                setIsGenerating(false);
+            }
+        } else {
+             updateProject({...project, detailedServices: newServices});
+             showToast("Itens atualizados. Por favor, clique em 'Avançar' novamente.");
+        }
+        setIsVerbaModalOpen(false);
+    };
+
     const renderContent = () => {
         switch (activeStep) {
             case 0: return <Step0Summary project={project} onAdvance={() => handleStepCompletion(0, {})} />;
@@ -1014,15 +1063,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
                 isOpen={isVerbaModalOpen}
                 items={verbaItemsToEdit}
                 onClose={() => setIsVerbaModalOpen(false)}
-                onUpdate={(updatedItems) => {
-                    const newServices = (project.detailedServices || []).map(s => {
-                        const updatedItem = updatedItems.find(u => u.id === s.id);
-                        return updatedItem ? updatedItem : s;
-                    });
-                    updateProject({...project, detailedServices: newServices});
-                    setIsVerbaModalOpen(false);
-                    showToast("Itens atualizados. Por favor, clique em 'Avançar' novamente.");
-                }}
+                onUpdate={handleVerbaUpdate}
                 onContinue={() => {
                     setIsVerbaModalOpen(false);
                     handleStepCompletion(2, {});

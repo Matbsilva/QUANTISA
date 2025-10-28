@@ -50,12 +50,14 @@ export const AskView = () => {
                  {searchResult && (
                     <div className="mt-2 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg max-h-[60vh] overflow-y-auto">
                         <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: searchResult.text.replace(/\n/g, '<br />') }} />
-                        {searchResult.metadata && searchResult.metadata.groundingChunks.length > 0 && (
+                        {/* FIX: Check for groundingChunks existence before accessing its properties. */}
+                        {searchResult.metadata && searchResult.metadata.groundingChunks && searchResult.metadata.groundingChunks.length > 0 && (
                             <div className="mt-4">
                                 <h4 className="font-semibold text-sm">Fontes:</h4>
                                 <ul className="list-disc list-inside text-sm space-y-1">
+                                    {/* FIX: Check for chunk.web.uri before rendering the link and provide a fallback for the title. */}
                                     {searchResult.metadata.groundingChunks.map((chunk, index) => (
-                                        chunk.web && <li key={index}><a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{chunk.web.title}</a></li>
+                                        chunk.web && chunk.web.uri && <li key={index}><a href={chunk.web.uri} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{chunk.web.title || chunk.web.uri}</a></li>
                                     ))}
                                 </ul>
                             </div>

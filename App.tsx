@@ -18,6 +18,43 @@ type ActivePage = 'dashboard' | 'ask' | 'analysis' | 'datamaster' | 'settings';
 type CurrentView = 'page' | 'workspace' | 'project-details';
 
 
+// --- INTERACTIVE TEST PLAN ---
+const TestPlan = () => {
+    const tests = [
+        { id: 1, text: "Navegue para o Dashboard e verifique se este componente de teste está visível." },
+        { id: 2, text: "Teste Crítico: Avance até a Etapa 2 de um projeto e verifique se a tabela de Engenharia de Valor é preenchida." },
+        { id: 3, text: "No final da Etapa 2, verifique se o modal de 'verba' aparece, se os campos são editáveis e se o campo de instrução extra existe." },
+    ];
+    const [completedTests, setCompletedTests] = useState<Set<number>>(new Set());
+
+    const toggleTest = (id: number) => {
+        setCompletedTests(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) {
+                newSet.delete(id);
+            } else {
+                newSet.add(id);
+            }
+            return newSet;
+        });
+    };
+
+    return (
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4 rounded-md shadow-lg dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-600">
+            <h3 className="font-bold">Plano de Testes para Validação</h3>
+            <ul className="mt-2 list-inside space-y-1">
+                {tests.map(test => (
+                    <li key={test.id} onClick={() => toggleTest(test.id)} className="cursor-pointer group">
+                        <span className="mr-2">{completedTests.has(test.id) ? '✅' : '[]'}</span>
+                        <span className={completedTests.has(test.id) ? 'line-through text-gray-500' : ''}>{test.text}</span>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    );
+};
+
+
 // --- THEME TOGGLE ---
 const ThemeToggle = () => {
     // Initialize state to null to ensure server and client render the same initial UI
@@ -554,7 +591,12 @@ const App: React.FC = () => {
     const renderPageContent = () => {
         switch (activePage) {
             case 'dashboard':
-                return <DashboardView projects={projects} setProjects={setProjects} onSelectProject={handleSelectProject} onDeleteProject={handleDeleteProject} />;
+                return (
+                    <>
+                        <TestPlan />
+                        <DashboardView projects={projects} setProjects={setProjects} onSelectProject={handleSelectProject} onDeleteProject={handleDeleteProject} />
+                    </>
+                );
             case 'ask':
                 return <AskView />;
             case 'analysis':
@@ -589,7 +631,7 @@ const App: React.FC = () => {
                     {activePage === 'dashboard' && currentView === 'page' ? (
                         <div className="flex items-center justify-between w-full">
                             <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-200">Dashboard (Kanban)</h1>
-                            <div className="flex items-center gap-4">
+                             <div className="flex items-center gap-4">
                                 <Button onClick={handleNewProject}><PlusIcon className="w-5 h-5 mr-2" /> Novo Orçamento</Button>
                                 <ThemeToggle />
                             </div>
@@ -603,7 +645,9 @@ const App: React.FC = () => {
                        </div>
                     )}
                 </MainHeader>
-                {renderCurrentView()}
+                <div className="flex-1 overflow-y-auto">
+                    {renderCurrentView()}
+                </div>
             </main>
             
             <Modal isOpen={isNewProjectModalOpen} onClose={() => setIsNewProjectModalOpen(false)} title="Criar Novo Orçamento">
