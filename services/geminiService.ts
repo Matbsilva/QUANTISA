@@ -319,6 +319,15 @@ export const getValueEngineeringAnalysis = async (
     const aiInstance = getAiInstance();
     if (!aiInstance) throw new Error("Serviço de IA não está configurado.");
 
+    // --- PASSO 1: LOG DE INPUT ---
+    console.log("--- DEBUG: INICIANDO getValueEngineeringAnalysis ---");
+    console.log(`[${new Date().toISOString()}] INPUT (detailedServices):`, JSON.stringify(detailedServices, null, 2));
+
+    if (!detailedServices || detailedServices.length === 0) {
+        console.warn("--- ALERTA: getValueEngineeringAnalysis chamado com detailedServices VAZIO. Retornando [].");
+        return { valueEngineeringAnalysis: [] };
+    }
+
     const prompt = `
 # DIRETRIZ MESTRA DE EXECUÇÃO: LEIA E SIGA LITERALMENTE
 **SUA TAREFA É EXECUTAR ESTE PROMPT DE FORMA COMPLETA E PRECISA. NÃO RESUMA, NÃO OMITA SEÇÕES E NÃO ALTERE A LÓGICA SOLICITADA. A ADERÊNCIA TOTAL A TODAS AS SEÇÕES, ESPECIALMENTE À PERSONA E ÀS REGRAS DE PREENCHIMENTO, É O CRITÉRIO FUNDAMENTAL DA SUA RESPOSTA.**
@@ -434,22 +443,45 @@ Para cada solução, você **DEVE OBRIGATORIAMENTE PREENCHER TODAS AS SEGUINTES 
 // ... (Exemplos omitidos para brevidade, mas estão no prompt)
     `;
 
+    let rawText = ""; // Variável no escopo externo para guardar a resposta bruta para o catch
+
     try {
         const response = await aiInstance.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: prompt,
             config: { responseMimeType: "application/json" }
         });
-        const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
-        const match = response.text.match(jsonRegex);
-        let textToParse = response.text;
-        if (match && match[1]) {
-            textToParse = match[1];
+        
+        rawText = response.text;
+
+        // --- PASSO 2: LOG DE OUTPUT BRUTO ---
+        console.log(`[${new Date().toISOString()}] --- DEBUG: RESPOSTA BRUTA DA IA ---`);
+        console.log(rawText);
+        console.log(`[${new Date().toISOString()}] --- FIM DA RESPOSTA BRUTA ---`);
+
+        // --- PASSO 3: TENTATIVA DE PARSE ---
+        console.log(`[${new Date().toISOString()}] Tentando JSON.parse()...`);
+
+        const data = JSON.parse(rawText);
+        console.log(`[${new Date().toISOString()}] --- DEBUG: JSON PARSEADO COM SUCESSO ---`);
+
+        // Validação extra: O JSON é válido, mas o array está vazio?
+        if (!data.valueEngineeringAnalysis || data.valueEngineeringAnalysis.length === 0) {
+            console.warn(`[${new Date().toISOString()}] --- ALERTA: A IA retornou um JSON válido, mas com 'valueEngineeringAnalysis' VAZIO.`);
         }
-        return JSON.parse(textToParse);
+
+        return data;
+
     } catch (error) {
-        console.error("Error getting value engineering analysis:", error);
-        throw new Error("Não foi possível gerar a análise de engenharia de valor.");
+        // --- PASSO 4: LOG DE FALHA DE PARSE (O PROVÁVEL CULPADO) ---
+        console.error(`[${new Date().toISOString()}] --- ERRO CRÍTICO: FALHA NO JSON.PARSE() ---`);
+        console.error("Erro de parse:", (error as Error).message);
+        console.error(`[${new Date().toISOString()}] --- RESPOSTA BRUTA QUE CAUSOU A FALHA ---`);
+        console.error(rawText); // Logamos o texto bruto que falhou
+        console.error(`[${new Date().toISOString()}] --- FIM DA RESPOSTA BRUTA ---`);
+
+        // Retorna vazio para não quebrar a UI, mas agora sabemos o *porquê*.
+        return { valueEngineeringAnalysis: [] };
     }
 };
 

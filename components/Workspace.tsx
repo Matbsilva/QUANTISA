@@ -378,9 +378,12 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
                         onChange={(e) => setInstruction(e.target.value)}
                         rows={2}
                         className="w-full p-2 border rounded-md bg-white text-gray-900 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
-                        placeholder="Ex: Calcular o entulho gerado pelos itens da planilha..."
+                        placeholder="Ex: Calcule o entulho gerado nesta obra, e considere ele como um item novo."
                     />
                 </div>
+                 <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Estes dois itens indicados podem ficar como vb mesmo.
+                </p>
                 <div className="flex justify-end space-x-2 pt-4">
                     <Button variant="secondary" onClick={onContinue}>Continuar Mesmo Assim</Button>
                     <Button variant="primary" onClick={() => onUpdate(editedItems, instruction)}>Atualizar e Revisar</Button>
@@ -394,7 +397,6 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
 // --- Step 2: Detailed Scope ---
 const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { project: Project, onAdvance: () => void, updateProject: (project: Project) => void, showToast: (message: string) => void }) => {
     const [isApplyingDefinitions, setIsApplyingDefinitions] = React.useState(false);
-    const [isGeneratingSuggestions, setIsGeneratingSuggestions] = React.useState(false);
     const [areDefinitionsApplied, setAreDefinitionsApplied] = React.useState(!!project.valueEngineeringAnalysis);
     const [isRefinementApplied, setIsRefinementApplied] = React.useState(false);
     const [isEditing, setIsEditing] = React.useState(false);
@@ -423,38 +425,6 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
         updateProject({ ...project, internalQueryApprovals: newApprovals });
     };
 
-    React.useEffect(() => {
-        if (areDefinitionsApplied && !project.valueEngineeringAnalysis && !isGeneratingSuggestions) {
-            const generateSuggestions = async () => {
-                setIsGeneratingSuggestions(true);
-                try {
-                    // Step 1: Get Refinements
-                    const refinementResult = await getRefinementSuggestions(project.pendingDoubts || []);
-                    updateProject({ 
-                        ...project, 
-                        refinementSuggestions: refinementResult.refinementSuggestions,
-                    });
-
-                    // Step 2: Get Value Engineering
-                    const veResult = await getValueEngineeringAnalysis(project.detailedServices || []);
-                    updateProject({ 
-                        ...project, 
-                        refinementSuggestions: refinementResult.refinementSuggestions, // Carry over from previous update
-                        valueEngineeringAnalysis: veResult.valueEngineeringAnalysis
-                    });
-
-                } catch (e) {
-                    console.error(e);
-                    showToast(e instanceof Error ? e.message : "Erro ao gerar sugestões.");
-                } finally {
-                    setIsGeneratingSuggestions(false);
-                }
-            };
-            generateSuggestions();
-        }
-    }, [areDefinitionsApplied, project, isGeneratingSuggestions, updateProject, showToast]);
-
-
     const handleRefinementSelect = (doubtId: string, answer: string) => {
         const newSelections = { ...project.refinementSelections, [doubtId]: answer };
         updateProject({ ...project, refinementSelections: newSelections });
@@ -481,50 +451,61 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
     const handleApplyDefinitions = async () => {
         setIsApplyingDefinitions(true);
         try {
+            let intermediateProjectData: Partial<Project> = {};
+    
             if (isEditing) {
                 const result = await refineScopeFromEdits(project.detailedServices || [], editInstruction);
-                updateProject({ ...project, detailedServices: result.updatedServices, valueEngineeringAnalysis: undefined, refinementSuggestions: undefined });
-                setAreDefinitionsApplied(true);
+                intermediateProjectData = { detailedServices: result.updatedServices };
                 setIsEditing(false);
                 setEditInstruction('');
                 showToast("Escopo reanalisado com sucesso!");
-
             } else {
-                const queryResponses = (project.internalQueries || [])
-                    .map(q => ({
-                        query: q,
-                        status: project.internalQueryApprovals?.[q.id]?.status || null,
-                        comment: project.internalQueryApprovals?.[q.id]?.comment || ''
-                    }));
-                
+                const queryResponses = (project.internalQueries || []).map(q => ({
+                    query: q,
+                    status: project.internalQueryApprovals?.[q.id]?.status || null,
+                    comment: project.internalQueryApprovals?.[q.id]?.comment || ''
+                }));
                 const processedData = await processQueryResponses(queryResponses, project.detailedServices || []);
-                
                 const updatedServices = [...(project.detailedServices || []), ...processedData.newServices];
                 const updatedObservations = [...(project.observations || []), ...processedData.newObservations];
-                
                 const remainingQueries = (project.internalQueries || []).filter(
                     q => !project.internalQueryApprovals?.[q.id]?.status
                 );
-                
-                updateProject({
-                    ...project,
+                intermediateProjectData = {
                     detailedServices: updatedServices,
                     observations: updatedObservations,
-                    internalQueries: remainingQueries, 
-                    refinementSuggestions: undefined,
-                    valueEngineeringAnalysis: undefined,
-                });
-
-                setAreDefinitionsApplied(true);
-                setIsRefinementApplied(false);
+                    internalQueries: remainingQueries,
+                };
                 showToast("Definições aplicadas com sucesso!");
             }
-
+    
+            // Fetch VE and refinements based on the latest service list
+            const [refinementResult, veResult] = await Promise.all([
+                getRefinementSuggestions(project.pendingDoubts || []),
+                getValueEngineeringAnalysis(intermediateProjectData.detailedServices || [])
+            ]);
+    
+            // Create the final project state object in one go
+            const finalProjectState = {
+                ...project,
+                ...intermediateProjectData,
+                refinementSuggestions: refinementResult.refinementSuggestions,
+                valueEngineeringAnalysis: veResult.valueEngineeringAnalysis,
+                // Reset selections for the new data
+                refinementSelections: {},
+                customRefinementAnswers: {},
+                valueEngineeringSelections: {},
+            };
+    
+            updateProject(finalProjectState);
+            setAreDefinitionsApplied(true);
+            setIsRefinementApplied(false);
+    
         } catch (e) {
             console.error("Erro ao aplicar definições:", e);
             showToast(e instanceof Error ? `Erro: ${e.message}` : "Ocorreu um erro desconhecido.");
         } finally {
-             setIsApplyingDefinitions(false);
+            setIsApplyingDefinitions(false);
         }
     };
 
@@ -665,7 +646,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 </div>
             )}
             
-            {areDefinitionsApplied && isGeneratingSuggestions && (
+            {areDefinitionsApplied && project.valueEngineeringAnalysis === undefined && (
                 <div className="flex flex-col items-center justify-center text-center p-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
                     <Spinner className="w-8 h-8 mb-4" />
                     <h3 className="text-lg font-semibold dark:text-white">Analisando Dúvidas e Oportunidades...</h3>
@@ -673,7 +654,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 </div>
             )}
             
-            {areDefinitionsApplied && !isGeneratingSuggestions && project.refinementSuggestions && project.refinementSuggestions.length > 0 && (
+            {areDefinitionsApplied && project.refinementSuggestions && project.refinementSuggestions.length > 0 && (
                  <Quadrant title="Refinamento de Dúvidas Pendentes">
                     <div className="space-y-6">
                         {project.refinementSuggestions.map(suggestion => (
@@ -730,7 +711,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 </Quadrant>
             )}
 
-            {areDefinitionsApplied && !isGeneratingSuggestions && project.valueEngineeringAnalysis && (
+            {areDefinitionsApplied && project.valueEngineeringAnalysis && (
                 <Quadrant title="Análise de Engenharia de Valor">
                     <div className="space-y-8">
                          {(project.valueEngineeringAnalysis || []).map(analysis => (
@@ -830,9 +811,9 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                        </Button>
                         <Button 
                            onClick={handleEnterEditMode}
-                           size="sm" 
+                           size="md" 
                            variant='ghost'
-                           className="mt-2"
+                           className="mt-2 !text-primary font-semibold"
                        >
                            Alterar Definições Iniciais
                        </Button>
@@ -902,15 +883,15 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
     const [highestStepVisited, setHighestStepVisited] = React.useState(initialStep);
     const [isVerbaModalOpen, setIsVerbaModalOpen] = React.useState(false);
     const [verbaItemsToEdit, setVerbaItemsToEdit] = React.useState<Service[]>([]);
+    const [isGenerating, setIsGenerating] = React.useState(false);
+    const [loadingMessage, setLoadingMessage] = React.useState('');
+
 
     React.useEffect(() => {
         setActiveStep(initialStep);
         setHighestStepVisited(prev => Math.max(prev, initialStep));
     }, [project.id, initialStep]);
     
-
-    const [isGenerating, setIsGenerating] = React.useState(false);
-
     const handleStepCompletion = async <T,>(currentStepIndex: number, data: T) => {
         let updatedData: Partial<Project> = {};
         const nextStep = currentStepIndex + 1;
@@ -921,7 +902,8 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
                 showToast("Por favor, preencha as respostas do cliente para avançar.");
                 return;
             }
-
+            
+            setLoadingMessage('Gerando escopo detalhado com a IA...');
             setIsGenerating(true);
             try {
                 const result = await getDetailedScope(services, project.doubts || [], clientAnswers);
@@ -994,12 +976,14 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
     };
 
     const handleVerbaUpdate = async (updatedItems: Service[], instruction: string) => {
+        setIsVerbaModalOpen(false); // Close modal BEFORE processing
         const newServices = (project.detailedServices || []).map(s => {
             const updatedItem = updatedItems.find(u => u.id === s.id);
             return updatedItem ? updatedItem : s;
         });
 
         if (instruction.trim()) {
+            setLoadingMessage('Reanalisando o escopo com base nas suas edições...');
             setIsGenerating(true);
              try {
                 const result = await refineScopeFromEdits(newServices, instruction);
@@ -1014,7 +998,6 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
              updateProject({...project, detailedServices: newServices});
              showToast("Itens atualizados. Por favor, clique em 'Avançar' novamente.");
         }
-        setIsVerbaModalOpen(false);
     };
 
     const renderContent = () => {
@@ -1038,9 +1021,9 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
     return (
         <div className="p-4 md:p-8 flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900/50 relative">
              {isGenerating && (
-                <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm flex flex-col items-center justify-center z-50 rounded-lg">
+                <div className="fixed inset-0 bg-light-bg/80 dark:bg-gray-900/80 flex flex-col items-center justify-center z-50">
                     <Spinner className="w-12 h-12" />
-                    <p className="text-white mt-4 text-lg">Gerando escopo detalhado com a IA...</p>
+                    <p className="text-gray-800 dark:text-white mt-4 text-lg">{loadingMessage}</p>
                 </div>
             )}
              <div className="mb-6 flex justify-between items-center">

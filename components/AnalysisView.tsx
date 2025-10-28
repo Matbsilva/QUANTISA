@@ -41,7 +41,7 @@ Com base no escopo fornecido, execute uma análise técnica inicial completa, in
 
 - **Dúvidas Técnicas (doubts)**: Gere uma lista de dúvidas técnicas essenciais. Vá além do óbvio, antecipando problemas. Cubra os seguintes pontos com exemplos robustos:
     - **Especificações Detalhadas:**
-        - Exemplo (Impermeabilização): 'Qual o sistema de impermeabilização desejado para a área úmida? Argamassa polimérica, manta asfáltica ou membrana de PU? A base receberá regularização com caimento prévio?'
+        - Exemplo (Impermeabilização): 'Qual o sistema de impermeabilização desejado para la área úmida? Argamassa polimérica, manta asfáltica ou membrana de PU? A base receberá regularização com caimento prévio?'
         - Exemplo (Pisos): 'Para o contrapiso, qual a espessura final e o FCK desejado? Será armado com tela? Qual o tipo e a malha da tela?'
         - Exemplo (Acabamentos): 'Para a pintura, qual o tipo de tinta (acrílica, epóxi) e o padrão de acabamento (fosco, acetinado)? A superfície exige massa corrida acrílica ou PVA?'
     - **Métodos de Execução:**
@@ -102,18 +102,15 @@ Com base no escopo fornecido, execute uma análise técnica inicial completa, in
         }
     };
     
-    if (isLoading) {
-        return (
-            <div className="p-4 md:p-8 flex-1 flex flex-col items-center justify-center text-center">
-                <Spinner className="w-12 h-12 mb-4" />
-                <h2 className="text-xl font-semibold dark:text-white">Analisando escopo...</h2>
-                <p className="text-gray-600 dark:text-gray-400">Aguarde, a IA está processando as informações.</p>
-            </div>
-        )
-    }
-
     return (
-        <div className="p-4 md:p-8 flex-1 overflow-y-auto flex flex-col">
+        <div className="p-4 md:p-8 flex-1 overflow-y-auto flex flex-col relative">
+            {isLoading && (
+                <div className="absolute inset-0 bg-light-bg/80 dark:bg-gray-900/80 flex flex-col items-center justify-center z-50 rounded-lg">
+                    <Spinner className="w-12 h-12" />
+                    <h2 className="text-xl font-semibold dark:text-white mt-4">Analisando escopo...</h2>
+                    <p className="text-gray-600 dark:text-gray-400">Aguarde, a IA está processando as informações.</p>
+                </div>
+            )}
              <div className="max-w-4xl mx-auto w-full flex-1 flex flex-col">
                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md flex flex-col flex-1">
                      <h2 className="text-xl font-bold mb-4 dark:text-white">Iniciar Nova Análise de Escopo</h2>
@@ -132,7 +129,7 @@ Com base no escopo fornecido, execute uma análise técnica inicial completa, in
                       {error && <p className="text-sm text-danger mt-2">{error}</p>}
 
                      <div className="mt-6">
-                        <Button onClick={handleAnalyze} className="w-full" isLoading={isLoading} disabled={!textScope}>
+                        <Button onClick={handleAnalyze} className="w-full" isLoading={isLoading} disabled={!textScope || isLoading}>
                             Analisar e Criar Projeto
                         </Button>
                      </div>
