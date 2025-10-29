@@ -1,4 +1,6 @@
 
+
+
 import React from 'react';
 
 // --- ICONS ---
@@ -105,7 +107,7 @@ export const Button: React.FC<ButtonProps> = ({ children, className, variant = '
 
     const variantClasses = {
         primary: 'text-white bg-primary hover:bg-indigo-700 focus:ring-primary',
-        secondary: 'text-gray-700 bg-gray-200 hover:bg-gray-300 focus:ring-gray-400 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600',
+        secondary: 'text-white bg-gray-600 hover:bg-gray-700 focus:ring-gray-500 dark:bg-gray-500 dark:hover:bg-gray-400 font-semibold',
         danger: 'text-white bg-danger hover:bg-red-700 focus:ring-danger',
         ghost: 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 shadow-none border-none bg-transparent',
     };

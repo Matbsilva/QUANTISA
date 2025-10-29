@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Button, Spinner } from './Shared';
-import { analyzeText } from '../services/geminiService';
+import React, { useState, useEffect } from 'react';
+import { Button, Spinner, XIcon } from './Shared';
+import { analyzeText, analyzeImage } from '../services/geminiService';
 import type { ParsedAnalysis } from '../types';
 
 export const AnalysisView: React.FC<{ onAdvance: (analysisData: ParsedAnalysis) => void; }> = ({ onAdvance }) => {
@@ -68,16 +68,38 @@ Com base no escopo fornecido, execute uma análise técnica inicial completa, in
 `);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+    const [imageFile, setImageFile] = useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (imageFile) {
+            const url = URL.createObjectURL(imageFile);
+            setPreviewUrl(url);
+            return () => URL.revokeObjectURL(url);
+        }
+        setPreviewUrl(null);
+    }, [imageFile]);
+
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setImageFile(e.target.files[0]);
+        }
+    };
 
     const handleAnalyze = async () => {
-        if (!textScope) return;
+        if (!textScope && !imageFile) return;
         setIsLoading(true);
         setError('');
         try {
-            const fullPrompt = `${textScope}\n\nComando: ${command}`;
-            const result = await analyzeText(fullPrompt);
+            let result = '';
+            if (imageFile) {
+                const imagePrompt = `A imagem contém um escopo de projeto. O texto a seguir fornece contexto adicional. Analise ambos para executar o comando.\n\nContexto: ${textScope}\n\nComando: ${command}`;
+                result = await analyzeImage(imagePrompt, imageFile);
+            } else {
+                const fullPrompt = `${textScope}\n\nComando: ${command}`;
+                result = await analyzeText(fullPrompt);
+            }
 
-            // Tenta extrair o JSON de dentro de um bloco de código markdown
             const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
             const match = result.match(jsonRegex);
             let textToParse = result;
@@ -88,7 +110,7 @@ Com base no escopo fornecido, execute uma análise técnica inicial completa, in
 
             try {
                 const jsonData: ParsedAnalysis = JSON.parse(textToParse);
-                onAdvance(jsonData); // Passa os dados parseados para o App.tsx
+                onAdvance(jsonData);
             } catch (e) {
                 console.error("Failed to parse JSON from analysis:", e);
                 setError("Não foi possível processar a resposta da IA. O formato do JSON é inválido. Tente novamente.");
@@ -115,21 +137,53 @@ Com base no escopo fornecido, execute uma análise técnica inicial completa, in
                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md flex flex-col flex-1">
                      <h2 className="text-xl font-bold mb-4 dark:text-white">Iniciar Nova Análise de Escopo</h2>
                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-                         Cole o escopo bruto no campo abaixo. A IA irá extrair a lista de serviços, gerar dúvidas técnicas e identificar oportunidades.
+                         Cole o escopo bruto no campo de texto e/ou envie uma imagem. A IA irá extrair os serviços, gerar dúvidas e identificar oportunidades.
                      </p>
                      
                      <textarea 
                         value={textScope} 
                         onChange={(e) => setTextScope(e.target.value)} 
-                        rows={15} 
+                        rows={20} 
                         className="w-full p-2 border rounded-md bg-white text-gray-900 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder-gray-400 flex-grow" 
-                        placeholder="Cole aqui o texto do escopo..."
+                        placeholder="Cole aqui o texto do escopo ou use-o para dar contexto à imagem..."
                      />
                      
-                      {error && <p className="text-sm text-danger mt-2">{error}</p>}
+                    <div className="mt-4">
+                        <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 dark:border-gray-600 border-dashed rounded-md">
+                            <div className="space-y-1 text-center">
+                                {previewUrl ? (
+                                    <div className="relative group">
+                                        <img src={previewUrl} alt="Preview do escopo" className="mx-auto h-32 w-auto rounded-md" />
+                                        <div 
+                                            onClick={() => setImageFile(null)} 
+                                            className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-500 text-white rounded-full p-1 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                                        >
+                                            <XIcon className="w-4 h-4" />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                                            <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                        <div className="flex text-sm text-gray-600 dark:text-gray-400">
+                                            <label htmlFor="file-upload" className="relative cursor-pointer bg-white dark:bg-gray-800 rounded-md font-medium text-primary hover:text-indigo-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-indigo-500">
+                                                <span>Carregar um arquivo</span>
+                                                <input id="file-upload" name="file-upload" type="file" className="sr-only" accept="image/*" onChange={handleFileChange} />
+                                            </label>
+                                            <p className="pl-1">ou arraste e solte</p>
+                                        </div>
+                                        <p className="text-xs text-gray-500 dark:text-gray-500">PNG, JPG, GIF até 10MB</p>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                     {error && <p className="text-sm text-danger mt-2">{error}</p>}
 
                      <div className="mt-6">
-                        <Button onClick={handleAnalyze} className="w-full" isLoading={isLoading} disabled={!textScope || isLoading}>
+                        <Button onClick={handleAnalyze} className="w-full" isLoading={isLoading} disabled={(!textScope && !imageFile) || isLoading}>
                             Analisar e Criar Projeto
                         </Button>
                      </div>

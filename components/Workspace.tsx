@@ -116,18 +116,19 @@ const Quadrant = ({ title, children, className, actions }: { title: string, chil
 );
 
 const RenderMarkdownBold = ({ text }: { text: string }) => {
-    const parts = text.split(/(\*\*.*?\*\*)/g);
-    return (
-        <>
-            {parts.map((part, index) =>
-                part.startsWith('**') && part.endsWith('**') ? (
-                    <strong key={index}>{part.slice(2, -2)}</strong>
-                ) : (
-                    part
-                )
-            )}
-        </>
-    );
+    // Looks for a title in the format **Title:** at the beginning of the string
+    const match = text.match(/^\*\*(.*?)\*\*(.*)/s); // s flag for dot to match newline
+    if (match) {
+        const title = match[1];
+        const description = match[2];
+        return (
+            <>
+                <strong>{title}</strong>
+                <span>{description}</span>
+            </>
+        );
+    }
+    return <>{text}</>;
 };
 
 
@@ -248,13 +249,12 @@ const Step1Analysis = ({ project, onComplete, showToast }: { project: Project, o
             </div>
 
             {/* --- TIER 2 --- */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                 <Quadrant title="Respostas do Cliente">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ minHeight: '300px' }}>
+                 <Quadrant title="Respostas do Cliente" className="h-full">
                      <textarea 
                          value={clientAnswers}
                          onChange={e => setClientAnswers(e.target.value)}
-                         rows={8}
-                         className="w-full p-2 border rounded-md bg-white text-gray-900 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder-gray-400"
+                         className="w-full h-full p-2 border rounded-md bg-white text-gray-900 border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:placeholder-gray-400 resize-none"
                          placeholder="Cole aqui as respostas do cliente para as dúvidas acima..."
                      />
                 </Quadrant>
@@ -262,7 +262,7 @@ const Step1Analysis = ({ project, onComplete, showToast }: { project: Project, o
                      {(project.valueEngineering && project.valueEngineering.length > 0) ? (
                         <ul className="space-y-2 text-sm text-gray-700 dark:text-gray-300 list-disc list-inside">
                             {project.valueEngineering.map((suggestion, i) => (
-                                <li key={i}>{suggestion}</li>
+                                <li key={i}><RenderMarkdownBold text={suggestion} /></li>
                             ))}
                         </ul>
                     ) : (
@@ -753,20 +753,20 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                                                 {(analysis.options || []).map(opt => (
                                                     <tr key={opt.solution}>
                                                         <td className="p-3 font-medium text-gray-900 dark:text-gray-200 whitespace-pre-line">{opt.solution}</td>
-                                                        <td className="p-3 whitespace-pre-line text-center">{opt.relativeCost || 'N/A'}</td>
-                                                        <td className="p-3 whitespace-pre-line text-center">{opt.deadlineImpact || 'N/A'}</td>
-                                                        <td className="p-3 text-green-700 dark:text-green-400">
-                                                            <ul className="list-disc list-inside space-y-1">
+                                                        <td className="p-3 whitespace-pre-line text-center text-gray-700 dark:text-gray-300">{opt.relativeCost || 'N/A'}</td>
+                                                        <td className="p-3 whitespace-pre-line text-center text-gray-700 dark:text-gray-300">{opt.deadlineImpact || 'N/A'}</td>
+                                                        <td className="p-3">
+                                                            <ul className="list-disc list-inside space-y-1 text-green-700 dark:text-green-400">
                                                                 {(opt.pros || []).map(pro => <li key={pro}>{pro}</li>)}
                                                             </ul>
                                                         </td>
-                                                        <td className="p-3 text-red-700 dark:text-red-400">
-                                                            <ul className="list-disc list-inside space-y-1">
+                                                        <td className="p-3">
+                                                            <ul className="list-disc list-inside space-y-1 text-red-700 dark:text-red-400">
                                                                 {(opt.cons || []).map(con => <li key={con}>{con}</li>)}
                                                             </ul>
                                                         </td>
-                                                        <td className="p-3">
-                                                            <RenderMarkdownBold text={opt.recommendation || 'N/A'} />
+                                                        <td className="p-3 font-bold text-gray-800 dark:text-gray-200">
+                                                            {(opt.recommendation || 'N/A').replace(/\*\*/g, '')}
                                                         </td>
                                                         <td className="p-3 text-center">
                                                             <Button 

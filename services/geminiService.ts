@@ -1,5 +1,7 @@
 
 
+
+
 import { GoogleGenAI, GenerateContentResponse, Blob, Modality, type LiveServerMessage } from "@google/genai";
 import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery, ApprovalStatus } from '../types';
 
@@ -71,7 +73,7 @@ export const getDetailedScope = async (
 
     try {
         const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
@@ -160,7 +162,7 @@ export const processQueryResponses = async (
 
     try {
          const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
@@ -203,7 +205,7 @@ export const refineScopeFromEdits = async (
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
         Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
-        *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
+        *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar more obras e assegurar uma margem de lucro saudável através da precisão técnica.
         *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
         *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
         *   Precisão como Vantagem Competitiva: Seu trabalho é apurar os custos com a máxima precisão possível. Isso permite negociar com mais agressividade, ter uma margem de lucro clara e ganhar mais projetos por apresentar propostas tecnicamente superiores e financeiramente mais seguras.
@@ -233,7 +235,7 @@ export const refineScopeFromEdits = async (
 
     try {
         const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: { responseMimeType: "application/json" }
         });
@@ -296,7 +298,7 @@ export const getRefinementSuggestions = async (
 
     try {
         const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: { responseMimeType: "application/json" }
         });
@@ -380,7 +382,7 @@ Para cada item selecionado no Passo 1:
 3.  Preencha as colunas de análise para CADA opção (a atual e as alternativas), seguindo a lógica detalhada no PASSO 3.
 
 **PASSO 3: Preenchimento das Colunas (Lógica Detalhada e Obrigatória):**
-Para cada solução, você **DEVE OBRIGATORIAMENTE PREENCHER TODAS AS SEGUINTES PROPRIEDADES.** Não deixe nenhum campo em branco.
+Para cada solução, você **DEVE OBRIGATÓRIAMENTE PREENCHER TODAS AS SEGUINTES PROPRIEDADES.** Não deixe nenhum campo em branco.
 
 *   **Propriedade "solution":**
     *   **Lógica:** Crie um título curto e claro. Inclua especificações de produto entre parênteses.
@@ -401,6 +403,7 @@ Para cada solução, você **DEVE OBRIGATORIAMENTE PREENCHER TODAS AS SEGUINTES 
 **## 2.4. DIRETRIZES DE FORMATAÇÃO (REQUISITO TÉCNICO OBRIGATÓRIO):**
 *   Responda APENAS com um único objeto JSON válido e completo.
 *   NÃO inclua nenhum texto, explicação ou formatação markdown como \`\`\`json \`\`\` antes ou depois do objeto JSON.
+*   **DIRETRIZ FINAL DE VALIDAÇÃO:** Antes de retornar sua resposta, revise o JSON para garantir que não há vírgulas sobrando (trailing commas) no final de listas ([...]) ou objetos ({...}). A validade do JSON é crítica para o funcionamento do sistema.
 *   Siga ESTRITAMENTE a estrutura de \`types.ts\` abaixo:
 
 **Formato de Saída JSON Obrigatório:**
@@ -447,7 +450,7 @@ Para cada solução, você **DEVE OBRIGATORIAMENTE PREENCHER TODAS AS SEGUINTES 
 
     try {
         const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-pro',
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: { responseMimeType: "application/json" }
         });
