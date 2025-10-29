@@ -105,7 +105,7 @@ Com base no escopo fornecido, execute uma análise técnica inicial completa, in
     return (
         <div className="p-4 md:p-8 flex-1 overflow-y-auto flex flex-col relative">
             {isLoading && (
-                <div className="absolute inset-0 bg-light-bg/80 dark:bg-gray-900/80 flex flex-col items-center justify-center z-50 rounded-lg">
+                <div className="fixed inset-0 bg-light-bg/80 dark:bg-gray-900/80 flex flex-col items-center justify-center z-50">
                     <Spinner className="w-12 h-12" />
                     <h2 className="text-xl font-semibold dark:text-white mt-4">Analisando escopo...</h2>
                     <p className="text-gray-600 dark:text-gray-400">Aguarde, a IA está processando as informações.</p>

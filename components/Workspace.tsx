@@ -1,7 +1,7 @@
 "use client";
 
 import React from 'react';
-import type { Project, Service, InternalQueryApproval, ApprovalStatus, RefinementSuggestion, InternalQuery } from '../types';
+import type { Project, Service, InternalQueryApproval, ApprovalStatus, RefinementSuggestion, InternalQuery, ValueEngineeringAnalysis } from '../types';
 import { Button, TrashIcon, PlusIcon, ClipboardIcon, DownloadIcon, Spinner, ArrowLeftIcon, Modal } from './Shared';
 import { KanbanStatus } from '../types';
 import { getDetailedScope, getRefinementSuggestions, getValueEngineeringAnalysis, processQueryResponses, refineScopeFromEdits } from '../services/geminiService';
@@ -452,7 +452,10 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
         setIsApplyingDefinitions(true);
         try {
             let intermediateProjectData: Partial<Project> = {};
+            let refinementResult: { refinementSuggestions: RefinementSuggestion[] } = { refinementSuggestions: [] };
+            let veResult: { valueEngineeringAnalysis: ValueEngineeringAnalysis[] } = { valueEngineeringAnalysis: [] };
     
+            // ETAPA 1: Processar o feedback do usuário (Aprovações/Rejeições)
             if (isEditing) {
                 const result = await refineScopeFromEdits(project.detailedServices || [], editInstruction);
                 intermediateProjectData = { detailedServices: result.updatedServices };
@@ -479,19 +482,34 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 showToast("Definições aplicadas com sucesso!");
             }
     
-            // Fetch VE and refinements based on the latest service list
-            const [refinementResult, veResult] = await Promise.all([
-                getRefinementSuggestions(project.pendingDoubts || []),
-                getValueEngineeringAnalysis(intermediateProjectData.detailedServices || [])
-            ]);
+            const servicesParaAnalise = intermediateProjectData.detailedServices || project.detailedServices || [];
+            
+            // ETAPA 2: Buscar a Engenharia de Valor (Chamada Crítica - Agora Protegida)
+            try {
+                console.log("--- DEBUG: Solicitando getValueEngineeringAnalysis ---");
+                veResult = await getValueEngineeringAnalysis(servicesParaAnalise);
+                console.log("--- DEBUG: getValueEngineeringAnalysis SUCESSO ---");
+            } catch (veError) {
+                console.error("Erro CRÍTICO ao buscar Engenharia de Valor:", veError);
+                showToast("Erro ao gerar a Análise de Valor, mas outras definições foram salvas.");
+            }
     
-            // Create the final project state object in one go
+            // ETAPA 3: Buscar as Sugestões de Refinamento (Chamada Secundária - Agora Protegida)
+            try {
+                console.log("--- DEBUG: Solicitando getRefinementSuggestions ---");
+                refinementResult = await getRefinementSuggestions(project.pendingDoubts || []); 
+                console.log("--- DEBUG: getRefinementSuggestions SUCESSO ---");
+            } catch (refError) {
+                console.error("Erro CRÍTICO ao buscar Sugestões de Refinamento:", refError);
+                showToast("Erro ao buscar refinamento de dúvidas. Verifique o console (F12).");
+            }
+    
+            // ETAPA 4: Consolidar e Salvar o Estado UMA VEZ
             const finalProjectState = {
                 ...project,
                 ...intermediateProjectData,
                 refinementSuggestions: refinementResult.refinementSuggestions,
                 valueEngineeringAnalysis: veResult.valueEngineeringAnalysis,
-                // Reset selections for the new data
                 refinementSelections: {},
                 customRefinementAnswers: {},
                 valueEngineeringSelections: {},
@@ -502,7 +520,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
             setIsRefinementApplied(false);
     
         } catch (e) {
-            console.error("Erro ao aplicar definições:", e);
+            console.error("Erro fatal ao processar definições:", e);
             showToast(e instanceof Error ? `Erro: ${e.message}` : "Ocorreu um erro desconhecido.");
         } finally {
             setIsApplyingDefinitions(false);
@@ -747,7 +765,9 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                                                                 {(opt.cons || []).map(con => <li key={con}>{con}</li>)}
                                                             </ul>
                                                         </td>
-                                                        <td className="p-3 font-medium">{opt.recommendation || 'N/A'}</td>
+                                                        <td className="p-3">
+                                                            <RenderMarkdownBold text={opt.recommendation || 'N/A'} />
+                                                        </td>
                                                         <td className="p-3 text-center">
                                                             <Button 
                                                                 size="sm" 
@@ -812,8 +832,8 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                         <Button 
                            onClick={handleEnterEditMode}
                            size="md" 
-                           variant='ghost'
-                           className="mt-2 !text-primary font-semibold"
+                           variant='secondary'
+                           className="mt-2"
                        >
                            Alterar Definições Iniciais
                        </Button>
