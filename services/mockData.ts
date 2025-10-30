@@ -1,6 +1,6 @@
 
 
-import { Project, Priority, KanbanStatus, Insumo } from '../types';
+import { Project, Priority, KanbanStatus, Insumo, Composicao } from '../types';
 
 export const mockProjects: Project[] = [
     {
@@ -110,3 +110,5 @@ export const mockInsumos: Insumo[] = [
     { id: 'ins-5', nome: 'Ajudante', unidade: 'HH', custo: 30.00, tipo: 'MaoObra' },
     { id: 'ins-6', nome: 'Betoneira 400L', unidade: 'diária', custo: 85.00, tipo: 'Equipamento' },
 ];
+
+export const mockComposicoes: Composicao[] = [];

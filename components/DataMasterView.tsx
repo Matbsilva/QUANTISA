@@ -9,7 +9,7 @@ export const DataMasterView: React.FC<DataMasterViewProps> = ({ insumos }) => {
     return (
         <div className="p-4 md:p-8 flex-1 overflow-y-auto">
             <div className="max-w-7xl mx-auto">
-                <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Data Master - Insumos</h1>
+                <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Insumos</h1>
                 
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md">
                     <div className="p-4 border-b dark:border-gray-700">

@@ -154,3 +154,96 @@ export interface SearchResult {
   text: string;
   metadata?: GroundingMetadata;
 }
+
+// --- NEW COMPOSITION TYPES (V1.1 FINAL) ---
+
+export interface ComposicaoInsumo {
+  item: string;
+  unidade: string;
+  quantidadeComPerda: number;
+  valorUnitario: number;
+  valorTotal: number;
+  pesoUnitario?: number; 
+  pesoTotal?: number;
+}
+
+export interface ComposicaoMaoDeObra {
+  funcao: string;
+  hhPorUnidade: number; // Coeficiente de produtividade
+  custoUnitario: number;
+  custoTotal: number;
+}
+
+export interface ComposicaoListaCompraItem {
+    item: string;
+    unidadeCompra: string;
+    quantidadeBruta: number;
+    quantidadeAComprar: number;
+    custoTotalEstimado: number;
+}
+
+export interface ComposicaoIndicadorMaoDeObra {
+    funcao: string; // Ex: "HH Profissional (Pedreiro)"
+    hhPorUnidade: number;
+    hhTotal: number;
+}
+
+export interface ComposicaoIndicadores {
+  custoMateriais_porUnidade: number;
+  custoEquipamentos_porUnidade: number;
+  custoMaoDeObra_porUnidade: number;
+  custoDiretoTotal_porUnidade: number;
+  
+  custoMateriais_total: number;
+  custoEquipamentos_total: number;
+  custoMaoDeObra_total: number;
+  custoDiretoTotal_total: number;
+  
+  maoDeObraDetalhada: ComposicaoIndicadorMaoDeObra[]; // Array para flexibilidade
+  
+  pesoMateriais_porUnidade: number;
+  pesoMateriais_total: number;
+  
+  volumeEntulho_porUnidade: number;
+  volumeEntulho_total: number;
+}
+
+export interface Composicao {
+  id: string;
+  codigo: string;
+  titulo: string;
+  unidade: string;
+  quantidadeReferencia: number;
+  grupo: string;
+  tags: string[];
+  classificacaoInterna: string;
+  
+  premissas: {
+    escopo: string;
+    metodo: string;
+    incluso: string;
+    naoIncluso: string;
+  };
+  
+  insumos: {
+    materiais: ComposicaoInsumo[];
+    equipamentos: ComposicaoInsumo[];
+  };
+  
+  maoDeObra: ComposicaoMaoDeObra[];
+  listaCompra: ComposicaoListaCompraItem[];
+  indicadores: ComposicaoIndicadores;
+  
+  guias: {
+    dicasExecucao: string;
+    alertasSeguranca: string;
+    criteriosQualidade: string;
+  };
+
+  analiseEngenheiro: {
+    nota: string;
+    fontesReferencias: string;
+    quadroProdutividade: string;
+    analiseRecomendacao: string;
+  };
+}

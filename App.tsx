@@ -8,13 +8,14 @@ import { AnalysisView } from './components/AnalysisView';
 import { AskView } from './components/AskView';
 import { DataMasterView } from './components/DataMasterView';
 import { SettingsView } from './components/SettingsView';
+import { CompositionsView } from './components/CompositionsView';
 import { Modal, Button, SparklesIcon, MicIcon, Spinner, PlusIcon, SearchIcon, MoonIcon, SunIcon, ClipboardIcon } from './components/Shared';
-import type { Project, Message, ReturnHistoryItem, Insumo, ParsedAnalysis } from './types';
+import type { Project, Message, ReturnHistoryItem, Insumo, ParsedAnalysis, Composicao } from './types';
 import { Priority, KanbanStatus } from './types';
 import { streamChat, createTranscriptionSession } from './services/geminiService';
-import { mockProjects, mockInsumos } from './services/mockData';
+import { mockProjects, mockInsumos, mockComposicoes } from './services/mockData';
 
-type ActivePage = 'dashboard' | 'ask' | 'analysis' | 'datamaster' | 'settings';
+type ActivePage = 'dashboard' | 'ask' | 'analysis' | 'datamaster' | 'settings' | 'composicoes';
 type CurrentView = 'page' | 'workspace' | 'project-details';
 
 
@@ -106,7 +107,8 @@ const Sidebar = ({ onNewProject, activePage, onNavigate }: { onNewProject: () =>
         { id: 'ask', label: 'Home / Ask Quantisa', icon: <SearchIcon className="mr-3 w-5 h-5"/> },
         { id: 'analysis', label: 'Comece Por Aqui / Análise', icon: <span className="mr-3 text-lg">⚡</span> },
         { id: 'dashboard', label: 'Dashboard (Kanban)', icon: <span className="mr-3 text-lg">📊</span> },
-        { id: 'datamaster', label: 'Data Master', icon: <span className="mr-3 text-lg">🗄️</span> },
+        { id: 'datamaster', label: 'Insumos', icon: <span className="mr-3 text-lg">🗄️</span> },
+        { id: 'composicoes', label: 'Composições', icon: <span className="mr-3 text-lg">🏗️</span> },
         { id: 'settings', label: 'Settings', icon: <span className="mr-3 text-lg">⚙️</span> },
     ];
 
@@ -439,6 +441,7 @@ const Toast = ({ message, onDismiss }: { message: string; onDismiss: () => void 
 const App: React.FC = () => {
     const [projects, setProjects] = useState<Project[]>([]);
     const [insumos, setInsumos] = useState<Insumo[]>([]);
+    const [composicoes, setComposicoes] = useState<Composicao[]>([]);
     const [activePage, setActivePage] = useState<ActivePage>('analysis');
     const [currentView, setCurrentView] = useState<CurrentView>('page');
     const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -453,6 +456,7 @@ const App: React.FC = () => {
     useEffect(() => {
         setProjects(mockProjects);
         setInsumos(mockInsumos);
+        setComposicoes(mockComposicoes);
     }, []);
 
 
@@ -579,7 +583,8 @@ const App: React.FC = () => {
             dashboard: "Dashboard (Kanban)",
             ask: "Ask Quantisa",
             analysis: "Iniciar Nova Análise de Escopo",
-            datamaster: "Data Master",
+            datamaster: "Insumos",
+            composicoes: "Gestão de Composições",
             settings: "Settings",
         };
         if (currentView === 'project-details' && selectedProject) return `Detalhes: ${selectedProject.nome}`;
@@ -603,6 +608,8 @@ const App: React.FC = () => {
                 return <AnalysisView onAdvance={handleAdvanceFromAnalysis} />;
             case 'datamaster':
                 return <DataMasterView insumos={insumos} />;
+            case 'composicoes':
+                return <CompositionsView composicoes={composicoes} setComposicoes={setComposicoes} />;
             case 'settings':
                 return <SettingsView insumos={insumos} setInsumos={setInsumos} />;
             default:
