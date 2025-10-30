@@ -155,12 +155,12 @@ export interface SearchResult {
   metadata?: GroundingMetadata;
 }
 
-// --- NEW COMPOSITION TYPES (V1.1 FINAL) ---
+// --- NEW COMPOSITION TYPES (V1.2 FINAL) ---
 
 export interface ComposicaoInsumo {
   item: string;
   unidade: string;
-  quantidadeComPerda: number;
+  quantidade: number; // Formerly quantidadeComPerda
   valorUnitario: number;
   valorTotal: number;
   pesoUnitario?: number; 
@@ -215,6 +215,7 @@ export interface Composicao {
   unidade: string;
   quantidadeReferencia: number;
   grupo: string;
+  subgrupo: string;
   tags: string[];
   classificacaoInterna: string;
   
@@ -231,7 +232,13 @@ export interface Composicao {
   };
   
   maoDeObra: ComposicaoMaoDeObra[];
-  listaCompra: ComposicaoListaCompraItem[];
+  
+  quantitativosConsolidados: {
+      listaCompraMateriais: ComposicaoListaCompraItem[];
+      necessidadeEquipamentos: any[]; // Simplificado, pode ser refinado
+      quadroMaoDeObraTotal: any[]; // Simplificado, pode ser refinado
+  };
+
   indicadores: ComposicaoIndicadores;
   
   guias: {
@@ -245,5 +252,6 @@ export interface Composicao {
     fontesReferencias: string;
     quadroProdutividade: string;
     analiseRecomendacao: string;
+    notaDaImportacao?: string; // Campo opcional para a nota de adaptação
   };
 }

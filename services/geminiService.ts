@@ -1,9 +1,7 @@
 
 
-
-
 import { GoogleGenAI, GenerateContentResponse, Blob, Modality, type LiveServerMessage } from "@google/genai";
-import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery, ApprovalStatus } from '../types';
+import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery, ApprovalStatus, Composicao } from '../types';
 
 let ai: GoogleGenAI | null = null;
 
@@ -23,6 +21,216 @@ function getAiInstance() {
     console.warn("Gemini AI service is not initialized. Make sure the API_KEY environment variable is set.");
     return null;
 }
+
+export type ParsedComposicao = Omit<Composicao, 'id' | 'codigo'>;
+
+
+export const parseCompositions = async (text: string): Promise<ParsedComposicao[]> => {
+    const aiInstance = getAiInstance();
+    if (!aiInstance) throw new Error("Serviço de IA não está configurado.");
+
+    const prompt = `
+**1.0 PERSONA E OBJETIVOS ESTRATÉGICOS**
+
+Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente. Seus princípios de atuação são:
+
+*   **Busca pelo Custo-Benefício Ótimo:** Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes.
+*   **Foco Obsessivo em Mitigação de Riscos:** Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
+*   **Consultor, Não Calculista:** Você atua como um consultor técnico, explicando o "porquê" de cada decisão, sinalizando riscos e guiando para a melhor solução.
+
+**2.0 TAREFA PRINCIPAL**
+
+Sua função é receber um texto contendo uma composição de serviço e seu objetivo principal é **sempre retornar um array de objetos JSON perfeitamente estruturados** no formato \`Composicao\` final definido na Seção 4.0.
+
+**3.0 REGRAS DE ADAPTAÇÃO E PARSING**
+
+*   **3.1. Flexibilidade de Formato de Entrada:** O texto que você receberá pode ser texto puro ou texto formatado em Markdown. Sua primeira tarefa é interpretar a estrutura lógica do conteúdo, independentemente da formatação. Tabelas podem ser representadas por pipes (\`|\`) em Markdown ou por tabulações e espaços em texto puro. Sua inteligência deve ser capaz de identificar a estrutura em ambos os cenários.
+
+*   **3.2. Lógica de Processamento:**
+    *   **Se o texto de entrada já estiver no formato "Composição Padrão Quantisa V1.2"**, siga as regras de parsing direto para cada seção. A \`notaDaImportacao\` deve informar: "O texto original já estava no formato Padrão Quantisa. Realizado parsing direto de todas as seções."
+    *   **Se o texto estiver em um formato desconhecido**, ative seu modo de adaptação inteligente, usando sua persona de engenheiro para mapear os conceitos do texto de origem para os campos do padrão Quantisa.
+    *   **Se o texto de entrada for inválido** e não contiver nenhuma informação reconhecível de uma composição, gere uma \`notaDaImportacao\` com a seguinte mensagem de erro amigável: 'Alerta: O texto fornecido não parece ser uma composição de serviço. Não foi possível extrair dados. Por favor, verifique o texto e tente novamente.' e retorne um objeto \`Composicao\` com campos vazios.
+
+*   **3.3. Transparência e Mitigação de Risco (Regra de Ouro para \`notaDaImportacao\`):**
+    *   **Seja Conciso:** Na \`notaDaImportacao\`, foque em resumir as **principais adaptações** e nos **alertas de maior risco**. Evite listar suposições óbvias para cada campo unitário (ex: "assumi quantidade 1").
+    *   **Sugira o Código:** Analise o título e os insumos da composição e, na \`notaDaImportacao\`, **sugira um Grupo** (ex: CIVIL, PINTURA, IMPERM) e um **Subgrupo** (ex: PISO, PAREDE, FORRO) para a codificação.
+    *   **Exemplo de Nota de Adaptação:**
+        *   "O texto original não estava no Padrão Quantisa. Realizei as seguintes adaptações:"
+        *   "**Sugestão de Código:** Grupo: PINTURA, Subgrupo: PAREDE."
+        *   "Mapeei a lista de itens para \`insumos\` e \`maoDeObra\`."
+        *   "**Alerta de Risco:** Não encontrei informações sobre Premissas ou Critérios de Qualidade. A ausência de um escopo claro é um risco comercial. Recomendo detalhar."
+        *   "Assumi uma quantidade de referência de 1, pois não foi especificada."
+
+*   **3.4. Dados Faltantes:** Se uma seção inteira estiver faltando no texto original, deixe os campos correspondentes no JSON vazios (\`""\`) ou como arrays vazios (\`[]\`), mas nunca omita o campo da estrutura final.
+
+**4.0 ESTRUTURA DE DADOS ALVO (JSON de Saída)**
+
+Sua saída deve aderir estritamente à seguinte estrutura TypeScript. **Sempre retorne um array \`[]\`**, mesmo que ele contenha apenas um único objeto.
+
+\`\`\`typescript
+export interface ComposicaoInsumo {
+  item: string;
+  unidade: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;
+  pesoUnitario?: number;
+  pesoTotal?: number;
+}
+export interface ComposicaoMaoDeObra {
+  funcao: string;
+  hhPorUnidade: number;
+  custoUnitario: number;
+  custoTotal: number;
+}
+export interface ComposicaoListaCompraItem {
+    item: string;
+    unidadeCompra: string;
+    quantidadeBruta: number;
+    quantidadeAComprar: number;
+    custoTotalEstimado: number;
+}
+export interface ComposicaoIndicadorMaoDeObra {
+    funcao: string;
+    hhPorUnidade: number;
+    hhTotal: number;
+}
+export interface ComposicaoIndicadores {
+  custoMateriais_porUnidade: number;
+  custoEquipamentos_porUnidade: number;
+  custoMaoDeObra_porUnidade: number;
+  custoDiretoTotal_porUnidade: number;
+  custoMateriais_total: number;
+  custoEquipamentos_total: number;
+  custoMaoDeObra_total: number;
+  custoDiretoTotal_total: number;
+  maoDeObraDetalhada: ComposicaoIndicadorMaoDeObra[];
+  pesoMateriais_porUnidade: number;
+  pesoMateriais_total: number;
+  volumeEntulho_porUnidade: number;
+  volumeEntulho_total: number;
+}
+export interface Composicao {
+  codigo: string;
+  titulo: string;
+  unidade: string;
+  quantidadeReferencia: number;
+  grupo: string;
+  subgrupo: string;
+  tags: string[];
+  classificacaoInterna: string;
+  premissas: { escopo: string; metodo: string; incluso: string; naoIncluso: string; };
+  insumos: { materiais: ComposicaoInsumo[]; equipamentos: ComposicaoInsumo[]; };
+  maoDeObra: ComposicaoMaoDeObra[];
+  quantitativosConsolidados: {
+      listaCompraMateriais: ComposicaoListaCompraItem[];
+      necessidadeEquipamentos: any[];
+      quadroMaoDeObraTotal: any[];
+  };
+  indicadores: ComposicaoIndicadores;
+  guias: { dicasExecucao: string; alertasSeguranca: string; criteriosQualidade: string; };
+  analiseEngenheiro: {
+    nota: string;
+    fontesReferencias: string;
+    quadroProdutividade: string;
+    analiseRecomendacao: string;
+    notaDaImportacao?: string;
+  };
+}
+\`\`\`
+
+**5.0 SAÍDA**
+
+Sua resposta final deve ser um array de objetos \`Composicao\` bem-formado, pronto para ser validado pelo usuário. Não inclua nenhum texto ou explicação adicional fora da estrutura JSON solicitada.
+    `;
+
+    try {
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ parts: [{ text: text }], role: 'user' }, { parts: [{ text: prompt }], role: 'model' }],
+            config: {
+                responseMimeType: "application/json",
+            }
+        });
+        
+        let textToParse = response.text;
+        
+        const parsedData = JSON.parse(textToParse);
+        
+        // Enhanced validation
+        if (Array.isArray(parsedData)) {
+            return parsedData;
+        }
+
+        // Handle case where AI returns a single object instead of an array of one
+        if (typeof parsedData === 'object' && parsedData !== null && 'titulo' in parsedData) {
+            return [parsedData];
+        }
+
+        // Handle case where AI wraps the array in an object, e.g. { "key": [...] }
+        if (typeof parsedData === 'object' && parsedData !== null) {
+            const keys = Object.keys(parsedData);
+            if (keys.length > 0 && Array.isArray(parsedData[keys[0]])) {
+                return parsedData[keys[0]];
+            }
+        }
+
+        throw new Error("A IA não retornou um array de composições no formato esperado.");
+
+    } catch (error) {
+        console.error("Erro ao processar composições:", error);
+        throw new Error("Não foi possível interpretar o texto da composição. Verifique o formato e tente novamente.");
+    }
+};
+
+export const reviseParsedComposition = async (composition: ParsedComposicao, instruction: string): Promise<ParsedComposicao> => {
+    const aiInstance = getAiInstance();
+    if (!aiInstance) throw new Error("Serviço de IA não está configurado.");
+
+    const prompt = `
+        **PERSONA:** Você é um assistente de IA especialista em correção de dados estruturados.
+        
+        **AÇÃO:** Sua tarefa é revisar um objeto JSON de composição de serviço que foi parseado incorretamente, usando as instruções do usuário para corrigi-lo. Retorne APENAS o objeto JSON corrigido.
+
+        **CONTEXTO:**
+        - **JSON Incorreto:** ${JSON.stringify(composition)}
+        - **Instruções de Correção do Usuário:** "${instruction}"
+
+        **FORMATO DE SAÍDA OBRIGATÓRIO:**
+        Retorne APENAS o objeto JSON corrigido. Não adicione nenhum texto, explicação ou formatação markdown como \`\`\`json \`\`\` antes ou depois do objeto JSON. Sua resposta deve ser diretamente parseável.
+    `;
+
+    try {
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ parts: [{ text: prompt }], role: 'user' }],
+            config: {
+                responseMimeType: "application/json",
+            }
+        });
+
+        let textToParse = response.text;
+        const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+        const match = textToParse.match(jsonRegex);
+        if (match && match[1]) {
+            textToParse = match[1];
+        }
+
+        const parsedData: ParsedComposicao = JSON.parse(textToParse);
+        
+        // Basic validation
+        if (!parsedData.titulo) {
+             throw new Error("A IA retornou um objeto de composição inválido.");
+        }
+
+        return parsedData;
+
+    } catch (error) {
+        console.error("Erro ao revisar composição:", error);
+        throw new Error("Não foi possível aplicar a correção na composição.");
+    }
+}
+
 
 export interface DetailedScopeAnalysis {
     detailedServices: Service[];
@@ -382,7 +590,7 @@ Para cada item selecionado no Passo 1:
 3.  Preencha as colunas de análise para CADA opção (a atual e as alternativas), seguindo a lógica detalhada no PASSO 3.
 
 **PASSO 3: Preenchimento das Colunas (Lógica Detalhada e Obrigatória):**
-Para cada solução, você **DEVE OBRIGATÓRIAMENTE PREENCHER TODAS AS SEGUINTES PROPRIEDADES.** Não deixe nenhum campo em branco.
+Para cada solução, você **DEVE OBRIGATÓAMENTE PREENCHER TODAS AS SEGUINTES PROPRIEDADES.** Não deixe nenhum campo em branco.
 
 *   **Propriedade "solution":**
     *   **Lógica:** Crie um título curto e claro. Inclua especificações de produto entre parênteses.

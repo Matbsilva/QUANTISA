@@ -1,3 +1,4 @@
+
 "use client";
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -609,7 +610,7 @@ const App: React.FC = () => {
             case 'datamaster':
                 return <DataMasterView insumos={insumos} />;
             case 'composicoes':
-                return <CompositionsView composicoes={composicoes} setComposicoes={setComposicoes} />;
+                return <CompositionsView composicoes={composicoes} setComposicoes={setComposicoes} showToast={setToastMessage} />;
             case 'settings':
                 return <SettingsView insumos={insumos} setInsumos={setInsumos} />;
             default:
