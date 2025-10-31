@@ -4,6 +4,8 @@
 
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import type { Composicao, ComposicaoInsumo, ComposicaoMaoDeObra } from '../types';
 import { Button, SearchIcon, Spinner } from './Shared';
@@ -58,7 +60,7 @@ const CompositionDetailDisplay: React.FC<{
                 <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-slate-200 dark:bg-slate-700">
                     <tr>{headers.map(h => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}</tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">{children}</tbody>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-700 dark:text-gray-300">{children}</tbody>
             </table>
         </div>
     );
@@ -408,7 +410,6 @@ export const CompositionsView: React.FC<{
                             />
                             <div className="mt-4 text-right">
                                 <Button onClick={handleProcessar} isLoading={isProcessing}>
-                                    {isProcessing && <Spinner className="w-4 h-4 mr-2" />}
                                     {isProcessing ? 'Processando...' : 'Processar com IA'}
                                 </Button>
                             </div>
