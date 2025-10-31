@@ -2,10 +2,15 @@
 
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import type { Composicao, ComposicaoInsumo, ComposicaoMaoDeObra } from '../types';
 import { Button, SearchIcon, Spinner } from './Shared';
 import { parseCompositions, reviseParsedComposition, ParsedComposicao } from '../services/geminiService';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
 
 type ReviewableComposicao = ParsedComposicao & {
     reviewState: {
@@ -50,7 +55,7 @@ const CompositionDetailDisplay: React.FC<{
     const Table = ({ headers, children }: { headers: string[], children?: React.ReactNode }) => (
         <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-                <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50 dark:bg-gray-700/50">
+                <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-slate-200 dark:bg-slate-700">
                     <tr>{headers.map(h => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}</tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">{children}</tbody>
@@ -158,7 +163,14 @@ const CompositionDetailDisplay: React.FC<{
             <Section title="7. Análise Técnica do Engenheiro">
                  <MarkdownRenderer text={`**Nota:** ${composition.analiseEngenheiro?.nota}`} />
                  <MarkdownRenderer text={`**Fontes e Referências:** ${composition.analiseEngenheiro?.fontesReferencias}`} />
-                 <MarkdownRenderer text={`**Quadro de Produtividade:** ${composition.analiseEngenheiro?.quadroProdutividade}`} />
+                 <div>
+                    <p><strong>Quadro de Produtividade:</strong></p>
+                    <div className="prose prose-sm dark:prose-invert max-w-none prose-table:w-full prose-td:px-2 prose-td:py-1 prose-th:px-2 prose-th:py-1">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {composition.analiseEngenheiro?.quadroProdutividade || ''}
+                        </ReactMarkdown>
+                    </div>
+                </div>
                  <MarkdownRenderer text={`**Análise e Recomendação:** ${composition.analiseEngenheiro?.analiseRecomendacao}`} />
             </Section>
 
@@ -202,12 +214,12 @@ const CompositionSummaryCard: React.FC<{ composition: Composicao }> = ({ composi
              </div>
              <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md mb-4">
                  <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">📋 PREMISSAS & ESCOPO</h4>
-                 <MarkdownRenderer text={`**Escopo:** ${composition.premissas?.escopo}`} className="text-xs text-gray-600 dark:text-gray-400 italic" />
-                 <MarkdownRenderer text={`**Incluso:** ${composition.premissas?.incluso}`} className="text-xs text-gray-600 dark:text-gray-400 italic" />
+                 <MarkdownRenderer text={`**Escopo:** ${composition.premissas?.escopo}`} className="text-sm text-gray-600 dark:text-gray-400 italic" />
+                 <MarkdownRenderer text={`**Incluso:** ${composition.premissas?.incluso}`} className="text-sm text-gray-600 dark:text-gray-400 italic" />
              </div>
               <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md">
                  <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">📊 INDICADORES-CHAVE (por {composition.unidade})</h4>
-                 <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-xs text-gray-800 dark:text-gray-300">
+                 <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-sm text-gray-800 dark:text-gray-300">
                      <span><strong>Mat:</strong> R$ {composition.indicadores?.custoMateriais_porUnidade?.toFixed(2)}</span>
                      <span><strong>M.O.:</strong> R$ {composition.indicadores?.custoMaoDeObra_porUnidade?.toFixed(2)}</span>
                      <span><strong>Equip:</strong> R$ {composition.indicadores?.custoEquipamentos_porUnidade?.toFixed(2)}</span>
@@ -242,6 +254,17 @@ export const CompositionsView: React.FC<{
         setIsProcessing(true);
         try {
             const parsed = await parseCompositions(compositionText);
+
+            // Aprimoramento do Fluxo de Erro
+            if (
+                parsed.length > 0 &&
+                !parsed[0].titulo &&
+                parsed[0].analiseEngenheiro?.notaDaImportacao?.includes('Alerta:')
+            ) {
+                showToast(parsed[0].analiseEngenheiro.notaDaImportacao);
+                // Permanece na tela de importação, não avança para revisão
+                return; 
+            }
 
             const reviewable = parsed.map(p => {
                 let suggestedGrupo = 'GERAL';
@@ -363,7 +386,7 @@ export const CompositionsView: React.FC<{
 
     return (
         <div className="p-4 md:p-8 flex-1 overflow-y-auto text-base">
-            <div className="max-w-7xl mx-auto space-y-8">
+            <div className="max-w-screen-xl mx-auto space-y-8">
                 <div className="flex items-center justify-between">
                      <h1 className="text-2xl font-bold text-gray-800 dark:text-white">Gestão de Composições</h1>
                      <div className="flex space-x-2 p-1 bg-gray-200 dark:bg-gray-900 rounded-lg">

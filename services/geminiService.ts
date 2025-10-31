@@ -1,5 +1,4 @@
 
-
 import { GoogleGenAI, GenerateContentResponse, Blob, Modality, type LiveServerMessage } from "@google/genai";
 import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery, ApprovalStatus, Composicao } from '../types';
 
@@ -47,16 +46,19 @@ Sua função é receber um texto e seu objetivo principal é **sempre retornar u
 *   **3.1. Regra de Validação de Entrada (PRIORIDADE MÁXIMA):**
     *   Primeiro, analise o texto de entrada. Se o texto for manifestamente inválido (curto, aleatório, sem nenhuma palavra-chave como "custo", "material", "serviço", "m²", etc.), sua tarefa é parar imediatamente. Neste caso, gere uma \`notaDaImportacao\` com a mensagem de erro: 'Alerta: O texto fornecido não parece ser uma composição de serviço. Não foi possível extrair dados. Por favor, verifique o texto e tente novamente.' e retorne um objeto \`Composicao\` com campos vazios ou nulos. **NÃO tente criar uma composição a partir de um texto sem sentido.**
 
-*   **3.2. Flexibilidade de Formato de Entrada:**
-    *   Se a entrada for válida, prossiga. Lembre-se que o texto pode ser puro ou Markdown. Sua inteligência deve ser capaz de identificar a estrutura em ambos os cenários.
+*   **3.2. Flexibilidade de Formato e Extração Completa:**
+    *   Se a entrada for válida, prossiga. Lembre-se que o texto pode ser puro ou Markdown. Sua inteligência deve identificar a estrutura em ambos os cenários. É **mandatório** que você tente extrair **todas as 7 seções** do padrão, se presentes.
 
 *   **3.3. Lógica de Processamento:**
-    *   **Se o texto de entrada já estiver no formato "Composição Padrão Quantisa V1.2"**, faça o parsing direto. A \`notaDaImportacao\` deve informar: "O texto original já estava no formato Padrão Quantisa. Realizado parsing direto de todas as seções."
+    *   **Se o texto de entrada já estiver no formato "Composição Padrão Quantisa V1.2"**, faça o parsing direto.
     *   **Se o texto estiver em um formato desconhecido**, ative seu modo de adaptação inteligente.
 
 *   **3.4. Transparência na \`notaDaImportacao\` (Regra de Ouro):**
     *   **Seja Conciso:** Foque em resumir as **principais adaptações** e nos **alertas de maior risco**.
-    *   **Sugira o Código:** Analise o título e os insumos e, na \`notaDaImportacao\`, **sugira um Grupo** (ex: CIVIL, PINTURA) e um **Subgrupo** (ex: PISO, PAREDE).
+    *   **Sugira o Código (OBRIGATÓRIO):** Analise o título e os insumos e, na \`notaDaImportacao\`, **sugira um Grupo** (ex: CIVIL, PINTURA) e um **Subgrupo** (ex: PISO, PAREDE). Esta sugestão é obrigatória.
+
+*   **3.5. Formatação de Saída (Regra Específica):**
+    *   Para o campo \`analiseEngenheiro.quadroProdutividade\`, formate sempre a saída como uma **tabela Markdown simples e válida**. Não retorne como um objeto ou texto não formatado.
 
 **4.0 ESTRUTURA DE DADOS ALVO (JSON de Saída)**
 
@@ -243,7 +245,7 @@ export const getDetailedScope = async (
     const prompt = `
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
-        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
+        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍCIOS EM SUA ANÁLISE):
         *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
         *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
         *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
@@ -329,7 +331,7 @@ export const processQueryResponses = async (
     const prompt = `
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
-        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
+        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍCIOS EM SUA ANÁLISE):
         *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
         *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
         *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
@@ -406,7 +408,7 @@ export const refineScopeFromEdits = async (
     const prompt = `
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
-        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
+        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍCIOS EM SUA ANÁLISE):
         *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar more obras e assegurar uma margem de lucro saudável através da precisão técnica.
         *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
         *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
@@ -541,7 +543,7 @@ export const getValueEngineeringAnalysis = async (
 **1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)**
 Você atuará como um **Engenheiro Civil Sênior** e especialista em orçamentos que opera com uma **Visão de Dono** absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
 
-**Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):**
+**Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍCIOS EM SUA ANÁLISE):**
 *   **Busca pelo Custo-Benefício Ótimo:** Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
 *   **Engenharia de Valor como Ferramenta Estratégica:** Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
 *   **Foco Obsessivo em Mitigação de Riscos:** Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
