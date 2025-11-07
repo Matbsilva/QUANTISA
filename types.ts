@@ -123,14 +123,20 @@ export interface Project {
 }
 
 
+export interface PriceHistory {
+  date: string;
+  cost: number;
+}
+
 export interface Insumo {
   id: string;
   nome: string;
   unidade: string;
-  custo: number;
+  custo: number; // Represents the LATEST cost for display purposes
   tipo: 'Material' | 'MaoObra' | 'Equipamento';
   marca?: string;
   observacao?: string;
+  priceHistory: PriceHistory[];
 }
 
 export interface Message {

@@ -36,12 +36,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ insumos, setInsumos 
                 return;
             }
 
+            // FIX: Added missing 'priceHistory' property to conform to the Insumo type.
             novosInsumos.push({
                 id: `ins-${Date.now()}-${Math.random()}`,
                 nome,
                 unidade,
                 custo,
                 tipo: 'Material', // Simplesmente definindo um tipo padrão por enquanto
+                priceHistory: [{ date: new Date().toISOString(), cost: custo }],
             });
         }
         

@@ -953,65 +953,34 @@ export const parseInsumos = async (text: string): Promise<Partial<Insumo>[]> => 
     if (!aiInstance) throw new Error("Serviço de IA não está configurado.");
 
     const prompt = `
+// NOVO PROMPT V2.0 PARA parseInsumos - Foco na Unidade de Compra
+
 **1.0 PERSONA E OBJETIVOS ESTRATÉGICOS**
 
-Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar dados estruturados e precisos para garantir propostas competitivas. Seus princípios são:
+Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar dados estruturados e precisos para um catálogo de insumos, refletindo exatamente como os produtos são **COMPRADOS** no mercado. Seus princípios são:
 
-*   **Precisão Acima de Tudo:** O custo unitário de um insumo é a base de todo o orçamento. Erros aqui invalidam todo o trabalho subsequente.
-*   **Inteligência de Compra:** Você pensa como um comprador de uma construtora. Você entende a diferença entre a unidade que se usa na obra (consumo) e a unidade que se compra no fornecedor (compra).
-*   **Mitigação de Riscos:** Dados ambíguos são um risco. Sua função é clarificar a informação e, quando não for possível, sinalizar a ambiguidade de forma explícita.
+*   **Precisão de Compra:** O custo do insumo deve refletir sua unidade de comercialização (saco, lata, rolo, barra, etc.).
+*   **Clareza para o Orçamentista:** O nome do insumo deve ser padronizado para evitar ambiguidades.
+*   **Mitigação de Riscos:** Dados ambíguos são um risco. Sua função é clarificar a informação.
 
 **2.0 TAREFA PRINCIPAL**
 
-Sua tarefa é receber um texto de entrada contendo uma lista de insumos e retornar um array de objetos JSON perfeitamente estruturados, aderindo estritamente à interface TypeScript fornecida e às regras de inteligência abaixo.
+Sua tarefa é receber um texto de entrada contendo uma lista de insumos e retornar um array de objetos JSON perfeitamente estruturados, com **ESTRITAMENTE UM objeto por linha de insumo**, aderindo às regras de inteligência abaixo.
 
 **3.0 REGRAS DE INTELIGÊNCIA E PARSING (OBRIGATÓRIAS)**
 
-*   **3.1. Parsing Flexível:** O texto de entrada pode ser mal formatado. Tente extrair os dados (\`Nome\`, \`Unidade\`, \`Custo\`) mesmo que não haja separadores claros como ';'.
-*   **3.2. Extração de Dados Adicionais:**
-    *   **Marca:** Se o nome do item contiver uma marca clara (ex: "Viaplus 7000", "Aditivo (Bianco ou similar)", "Massa Acrílica (Suvinil)"), extraia-a para o campo \`marca\`.
-*   **3.3. Lógica de Geração Dupla (REGRA CRÍTICA):**
-    *   **Diferenciação:** Para cada item, identifique se ele é vendido em uma embalagem que pode ser fracionada (ex: galão, lata, saco, rolo) ou se é uma unidade indivisível (ex: uma ferramenta, um dispenser).
-    *   **Itens Fracionáveis (Gerar 2 Registros):** Se o item for fracionável, **você DEVE gerar DOIS objetos \`Insumo\` distintos**:
-        1.  **Um para a Unidade de Consumo:** Calcule o custo da unidade fracionada (ex: custo por Litro, por Kg, por metro). O campo \`nome\` DEVE ser o nome completo do produto, incluindo a embalagem (ex: "Massa Acrílica (Lata 18L)"), para que a origem do cálculo seja clara. A \`unidade\` deve ser a unidade de consumo (L, kg, m). O \`custo\` deve ser o valor calculado.
-        2.  **Um para a Unidade de Compra:** Mantenha o custo da embalagem fechada. O campo \`nome\` DEVE ser o nome completo, incluindo a embalagem (ex: "Massa Acrílica (Lata 18L)"). A \`unidade\` deve ser a unidade de compra (ex: "Lata 18L" ou "un"). O \`custo\` deve ser o valor original da embalagem.
-    *   **Itens Não Fracionáveis (Gerar 1 Registro):** Se o item não for fracionável, gere apenas UM objeto \`Insumo\`.
-    *   **Transparência:** No campo \`observacao\`, explique a origem do custo (ex: "Custo por Litro calculado...", "Custo da embalagem fechada.", "Custo unitário.").
-*   **3.4. Inferência de Tipo:** Classifique o \`tipo\` do insumo com base em palavras-chave:
-    *   'HH', 'Profissional', 'Ajudante', 'Engenheiro' -> \`'MaoObra'\`
-    *   'Locação', 'Caminhão', 'Betoneira', 'Martelete', 'Andaimes' -> \`'Equipamento'\`
-    *   Todos os outros -> \`'Material'\`
-*   **3.5. Tratamento de Erros:** Se uma linha for completamente ininteligível, ignore-a.
+*   **3.1. Parsing Flexível:** O texto de entrada pode ser mal formatado. Tente extrair os dados (\`Nome\`, \`Unidade\`, \`Custo\`).
+*   **3.2. Foco Exclusivo na Unidade de Compra:** Ignore qualquer cálculo de unidade de consumo. A \`unidade\` extraída deve ser a unidade de comercialização (ex: "un", "saco", "lata", "rolo", "m", "kg", "m³"). **NÃO GERE MAIS DE UM REGISTRO POR LINHA.**
+*   **3.3. Normalização de Nomes (REGRA ESSENCIAL):** Para garantir a consistência, **SEMPRE** normalize o nome do insumo para o formato: \`[Nome Base do Produto] ([Detalhe da Embalagem/Especificação])\`.
+    *   **Exemplo 1:** Entrada \`Cimento saco 50kg\` deve ser normalizada para \`Cimento (Saco 50kg)\`.
+    *   **Exemplo 2:** Entrada \`Tinta Acrílica Branca 18L\` deve ser \`Tinta Acrílica Branca (Lata 18L)\`.
+*   **3.4. Extração de Dados Adicionais:**
+    *   **Marca:** Se o nome do item contiver uma marca clara (ex: "Viaplus 7000", "Massa Acrílica (Suvinil)"), extraia-a para o campo \`marca\`.
+*   **3.5. Inferência de Tipo:** Classifique o \`tipo\` do insumo com base em palavras-chave: 'HH', 'Profissional' -> \`'MaoObra'\`; 'Locação', 'Caminhão' -> \`'Equipamento'\`; Todos os outros -> \`'Material'\`.
+*   **3.6. Tratamento de Erros:** Se uma linha for completamente ininteligível, ignore-a.
 
-**4.0 EXEMPLO DE GERAÇÃO DUPLA**
-
-*   **Entrada:** \`Massa Acrílica (Suvinil); Lata 18L; 150.00\`
-*   **Saída Esperada (Array com 2 objetos):**
-    \`\`\`json
-    [
-      {
-        "nome": "Massa Acrílica (Lata 18L)",
-        "unidade": "L",
-        "custo": 8.33,
-        "tipo": "Material",
-        "marca": "Suvinil",
-        "observacao": "Custo por Litro calculado com base no preço da Lata de 18L."
-      },
-      {
-        "nome": "Massa Acrílica (Lata 18L)",
-        "unidade": "un",
-        "custo": 150.00,
-        "tipo": "Material",
-        "marca": "Suvinil",
-        "observacao": "Custo da embalagem fechada."
-      }
-    ]
-    \`\`\`
-
-**5.0 ESTRUTURA DE DADOS ALVO (JSON de Saída OBRIGATÓRIO)**
-
+**4.0 ESTRUTURA DE DADOS ALVO E SAÍDA**
 Sua saída deve ser um array \`[]\` de objetos que sigam esta interface. Não inclua nenhum texto ou explicação fora da estrutura JSON.
-
 \`\`\`typescript
 export interface Insumo {
   id: string; // Gerar um ID temporário, ex: "temp-1", "temp-2"
@@ -1023,8 +992,7 @@ export interface Insumo {
   observacao?: string;
 }
 \`\`\`
-
-**6.0 SAÍDA**
+**5.0 SAÍDA**
 Retorne APENAS o array de objetos JSON.
 `;
 
@@ -1055,5 +1023,118 @@ Retorne APENAS o array de objetos JSON.
     } catch (error) {
         console.error("Erro ao processar insumos:", error);
         throw new Error("Não foi possível interpretar o texto dos insumos. Verifique o formato e tente novamente.");
+    }
+};
+
+export interface BatchSimilarityResult {
+  newInsumoId: string;
+  existingInsumoId: string;
+  similarityScore: number;
+  reasoning: string;
+}
+
+export const findSimilarInsumosInBatch = async (newInsumos: Partial<Insumo>[], existingInsumos: Insumo[]): Promise<BatchSimilarityResult[]> => {
+    const aiInstance = getAiInstance();
+    if (!aiInstance || newInsumos.length === 0 || existingInsumos.length === 0) {
+        return [];
+    }
+    
+    // Map to simple objects for the prompt to keep it clean
+    const newInsumosForPrompt = newInsumos.map(i => ({ id: i.id, nome: i.nome }));
+    const existingInsumosForPrompt = existingInsumos.map(i => ({ id: i.id, nome: i.nome }));
+
+    const prompt = `
+// PROMPT MESTRE V2.3 - Comparação em Lote (com Trava de Segurança)
+**1.0 PERSONA E OBJETIVO ESTRATÉGICO**
+
+Você atuará com uma persona híbrida e de alta especialização: um **Engenheiro Civil Sênior com "Visão de Dono"** que também é um **Analista de Dados Sênior**, focado em saneamento e normalização de bancos de dados. Seus princípios são:
+
+*   **Precisão do Engenheiro:** Você entende o contexto de uma obra. Sua análise vai além do texto e considera a aplicabilidade prática do insumo. Erros de especificação (ex: bitola de fio, tipo de cimento) são inaceitáveis.
+*   **Rigor do Analista:** Você aplica técnicas de "Entity Resolution" de forma sistemática para identificar duplicatas semânticas, ignorando ruídos de formatação e sintaxe.
+*   **Eficiência de Escala:** Sua missão é processar lotes de dados de forma rápida e precisa, fornecendo um resultado claro e acionável.
+
+Seu objetivo final é ser a principal linha de defesa contra a poluição de dados em um sistema de orçamentação, garantindo que a base de insumos seja íntegra, confiável e livre de duplicatas.
+
+**2.0 TAREFA PRINCIPAL**
+
+Você receberá um objeto JSON contendo duas chaves: \`newInsumos\` e \`existingInsumos\`. Sua tarefa é comparar CADA item da lista \`newInsumos\` com TODOS os itens da lista \`existingInsumos\`. No final, você deve retornar um array de objetos JSON contendo **APENAS OS PARES** que você considera semanticamente similares (com um score de similaridade >= 85).
+
+**3.0 REGRAS DE ANÁLISE (Combinando Visão de Engenharia e Análise de Dados)**
+
+*   **3.1. Pré-Filtro Semântico (NOVA REGRA - TRAVA DE SEGURANÇA):** Antes de realizar uma comparação detalhada entre dois nomes, verifique se eles compartilham pelo menos uma palavra-chave principal (substantivo, código técnico, etc.), excluindo preposições, artigos e unidades de medida genéricas. Se não houver uma sobreposição clara de palavras-chave do produto principal, considere a similaridade como 0 e não prossiga com a análise. **Exemplo: NÃO compare "Areia Média (Saco 20kg)" com "Cimento (50 kg)", pois as palavras-chave principais "Areia" e "Cimento" são diferentes.**
+*   **3.2. Foco no Significado, Não na Sintaxe (Visão do Analista):** Ignore diferenças de maiúsculas/minúsculas, acentuação, caracteres especiais (parênteses, hífens) e a ordem das palavras descritivas.
+*   **3.3. Equivalência de Unidades (Visão do Analista):** Trate sinônimos e abreviações de unidades como idênticos (ex: 'kg'='quilo', 'L'='Litro', 'm'='metro').
+*   **3.4. Equivalência de Especificações Técnicas (Visão do Engenheiro):** Reconheça e trate sinônimos técnicos comuns na construção civil como idênticos. **Exemplos críticos: '10mm' = '3/8"', '12.5mm' = '1/2"', '100mm' = 'DN100'**.
+*   **3.5. Comparação Crítica de Quantidade/Volume (Visão do Engenheiro):** A especificação de quantidade é crucial. "Saco 50kg" e "(50 kg)" são idênticos. No entanto, "Lata 18L" vs "Galão 3.6L" são **produtos de compra diferentes**.
+*   **3.6. Penalização por Diferenças-Chave (Visão do Engenheiro):** Atributos que **conflitam diretamente** (ex: "Cabo 2,5mm" vs "Cabo 4,0mm", "CPII" vs "CPV") devem impedir a correspondência. A ausência de um detalhe em um dos nomes (ex: "Cimento (Saco 50kg)" vs "Cimento CPII (Saco 50kg)") deve reduzir o score, mas ainda pode ser considerado similar se o restante do nome for idêntico.
+
+**4.0 EXEMPLO DE EXECUÇÃO**
+*   **Entrada:**
+    \`\`\`json
+    {
+      "newInsumos": [
+        { "id": "temp-1", "nome": "Cimento Saco de 50kg" },
+        { "id": "temp-2", "nome": "Tubo PVC Esgoto 100mm" },
+        { "id": "temp-3", "nome": "Areia Média Lavada (m³)" }
+      ],
+      "existingInsumos": [
+        { "id": "db-101", "nome": "Cimento (Saco 50kg)" },
+        { "id": "db-102", "nome": "Brita 0 (m³)" },
+        { "id": "db-103", "nome": "Tubo PVC p/ Esgoto DN100" }
+      ]
+    }
+    \`\`\`
+*   **Saída Esperada:**
+    \`\`\`json
+    [
+      {
+        "newInsumoId": "temp-1",
+        "existingInsumoId": "db-101",
+        "similarityScore": 100,
+        "reasoning": "Itens idênticos (cimento 50kg) com formatação diferente."
+      },
+      {
+        "newInsumoId": "temp-2",
+        "existingInsumoId": "db-103",
+        "similarityScore": 98,
+        "reasoning": "Mesmo produto (tubo PVC 100mm) com sinônimos técnicos (100mm vs DN100)."
+      }
+    ]
+    \`\`\`
+
+**5.0 ESTRUTURA DE DADOS ALVO (JSON de Saída OBRIGATÓRIO)**
+Retorne APENAS o array de objetos JSON. Se nenhum par similar for encontrado, retorne um array vazio \`[]\`.
+`;
+    
+    const payload = {
+        newInsumos: newInsumosForPrompt,
+        existingInsumos: existingInsumosForPrompt,
+    };
+
+    const fullPrompt = `${prompt}\n\n---\nEntrada JSON:\n---\n${JSON.stringify(payload, null, 2)}`;
+
+    try {
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: fullPrompt,
+            config: {
+                responseMimeType: "application/json",
+            }
+        });
+        
+        const textToParse = response.text;
+        const parsedData: BatchSimilarityResult[] = JSON.parse(textToParse);
+
+        if (Array.isArray(parsedData)) {
+            return parsedData;
+        }
+        
+        return [];
+
+    } catch (error) {
+        console.error("Erro ao calcular similaridade de insumos em lote:", error);
+        // Do not throw, return empty array to allow the flow to continue
+        // The calling function will handle showing a toast message.
+        return [];
     }
 };
