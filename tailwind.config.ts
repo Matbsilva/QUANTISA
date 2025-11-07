@@ -32,6 +32,7 @@ const config: Config = {
         success: '#10B981',
         warning: '#F59E0B',
         danger: '#EF4444',
+        'quantisa-blue': '#1e3a8a', // Dark blue for section titles
         
         // Redefinimos neutral e light-bg para garantir que usem nosso novo cinza baseado em slate.
         neutral: '#64748b', // slate-500

@@ -133,7 +133,7 @@ const RenderMarkdownBold = ({ text }: { text: string }) => {
 
 
 // --- Step 1: Scope & Analysis ---
-const Step1Analysis = ({ project, onComplete, showToast }: { project: Project, onComplete: (data: { services: Service[], clientAnswers: string }) => void, showToast: (message: string) => void }) => {
+const Step1Analysis = ({ project, onComplete, showToast }: { project: Project, onComplete: (data: { services: Service[], clientAnswers: string }) => void, showToast: (message: string, type?: 'success' | 'error') => void }) => {
     const [services, setServices] = React.useState<Service[]>(project.services || []);
     const [clientAnswers, setClientAnswers] = React.useState(project.clientAnswers || '');
 
@@ -163,7 +163,7 @@ const Step1Analysis = ({ project, onComplete, showToast }: { project: Project, o
     
     const handleDownloadCSV = () => {
         if (!services || services.length === 0) {
-            showToast("Não há serviços para baixar.");
+            showToast("Não há serviços para baixar.", 'error');
             return;
         }
         const headers = ['Item', 'Serviço', 'Quantidade', 'Unidade'];
@@ -395,7 +395,7 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
 
 
 // --- Step 2: Detailed Scope ---
-const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { project: Project, onAdvance: () => void, updateProject: (project: Project) => void, showToast: (message: string) => void }) => {
+const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { project: Project, onAdvance: () => void, updateProject: (project: Project) => void, showToast: (message: string, type?: 'success' | 'error') => void }) => {
     const [isApplyingDefinitions, setIsApplyingDefinitions] = React.useState(false);
     const [areDefinitionsApplied, setAreDefinitionsApplied] = React.useState(!!project.valueEngineeringAnalysis);
     const [isRefinementApplied, setIsRefinementApplied] = React.useState(false);
@@ -491,7 +491,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 console.log("--- DEBUG: getValueEngineeringAnalysis SUCESSO ---");
             } catch (veError) {
                 console.error("Erro CRÍTICO ao buscar Engenharia de Valor:", veError);
-                showToast("Erro ao gerar a Análise de Valor, mas outras definições foram salvas.");
+                showToast("Erro ao gerar a Análise de Valor, mas outras definições foram salvas.", 'error');
             }
     
             // ETAPA 3: Buscar as Sugestões de Refinamento (Chamada Secundária - Agora Protegida)
@@ -501,7 +501,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                 console.log("--- DEBUG: getRefinementSuggestions SUCESSO ---");
             } catch (refError) {
                 console.error("Erro CRÍTICO ao buscar Sugestões de Refinamento:", refError);
-                showToast("Erro ao buscar refinamento de dúvidas. Verifique o console (F12).");
+                showToast("Erro ao buscar refinamento de dúvidas. Verifique o console (F12).", 'error');
             }
     
             // ETAPA 4: Consolidar e Salvar o Estado UMA VEZ
@@ -521,7 +521,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
     
         } catch (e) {
             console.error("Erro fatal ao processar definições:", e);
-            showToast(e instanceof Error ? `Erro: ${e.message}` : "Ocorreu um erro desconhecido.");
+            showToast(e instanceof Error ? `Erro: ${e.message}` : "Ocorreu um erro desconhecido.", 'error');
         } finally {
             setIsApplyingDefinitions(false);
         }
@@ -895,7 +895,7 @@ interface WorkspaceViewProps {
     project: Project;
     onBack: () => void;
     updateProject: (project: Project) => void;
-    showToast: (message: string) => void;
+    showToast: (message: string, type?: 'success' | 'error') => void;
     initialStep?: number;
 }
 export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, updateProject, showToast, initialStep = 0 }) => {
@@ -919,7 +919,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
         if (currentStepIndex === 1) { 
             const { services, clientAnswers } = data as { services: Service[], clientAnswers: string };
              if (!clientAnswers.trim()) {
-                showToast("Por favor, preencha as respostas do cliente para avançar.");
+                showToast("Por favor, preencha as respostas do cliente para avançar.", 'error');
                 return;
             }
             
@@ -952,7 +952,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
 
             } catch (e) {
                 console.error(e);
-                showToast(e instanceof Error ? e.message : "Ocorreu um erro ao gerar o escopo detalhado.");
+                showToast(e instanceof Error ? e.message : "Ocorreu um erro ao gerar o escopo detalhado.", 'error');
             } finally {
                 setIsGenerating(false);
             }
@@ -1010,7 +1010,7 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
                 updateProject({ ...project, detailedServices: result.updatedServices });
                 showToast("Itens e instruções aplicados com sucesso!");
             } catch (e) {
-                showToast("Erro ao processar instrução adicional.");
+                showToast("Erro ao processar instrução adicional.", 'error');
             } finally {
                 setIsGenerating(false);
             }

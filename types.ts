@@ -124,11 +124,13 @@ export interface Project {
 
 
 export interface Insumo {
-    id: string;
-    nome: string;
-    unidade: string;
-    custo: number;
-    tipo: 'Material' | 'MaoObra' | 'Equipamento';
+  id: string;
+  nome: string;
+  unidade: string;
+  custo: number;
+  tipo: 'Material' | 'MaoObra' | 'Equipamento';
+  marca?: string;
+  observacao?: string;
 }
 
 export interface Message {

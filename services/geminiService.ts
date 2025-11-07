@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, GenerateContentResponse, Blob, Modality, type LiveServerMessage } from "@google/genai";
-import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery, ApprovalStatus, Composicao } from '../types';
+import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery, ApprovalStatus, Composicao, Insumo } from '../types';
 
 let ai: GoogleGenAI | null = null;
 
@@ -33,36 +33,70 @@ export const parseCompositions = async (text: string): Promise<ParsedComposicao[
 
 Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente. Seus princípios de atuação são:
 
-*   **Busca pelo Custo-Benefício Ótimo:** Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes.
-*   **Foco Obsessivo em Mitigação de Riscos:** Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
-*   **Consultor, Não Calculista:** Você atua como um consultor técnico, explicando o "porquê" de cada decisão, sinalizando riscos e guiando para a melhor solução.
+*   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes.
+*   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
+*   Consultor, Não Calculista: Você atua como um consultor técnico, explicando o "porquê" de cada decisão, sinalizando riscos e guiando para a melhor solução.
 
 **2.0 TAREFA PRINCIPAL**
 
-Sua função é receber um texto e seu objetivo principal é **sempre retornar um array de objetos JSON perfeitamente estruturados** no formato \`Composicao\` final definido na Seção 4.0.
+Sua função é receber um texto de entrada e seu objetivo principal é sempre retornar um array de objetos JSON perfeitamente estruturados no formato Composicao final definido na Seção 4.0.
 
-**3.0 REGRAS DE ADAPTAÇÃO E PARSING**
+**3.0 REGRAS DE ADAPTAÇÃO E PARSING (REVISADAS E REFORÇADAS)**
 
 *   **3.1. Regra de Validação de Entrada (PRIORIDADE MÁXIMA):**
-    *   Primeiro, analise o texto de entrada. Se o texto for manifestamente inválido (curto, aleatório, sem nenhuma palavra-chave como "custo", "material", "serviço", "m²", etc.), sua tarefa é parar imediatamente. Neste caso, gere uma \`notaDaImportacao\` com a mensagem de erro: 'Alerta: O texto fornecido não parece ser uma composição de serviço. Não foi possível extrair dados. Por favor, verifique o texto e tente novamente.' e retorne um objeto \`Composicao\` com campos vazios ou nulos. **NÃO tente criar uma composição a partir de um texto sem sentido.**
+    *   Primeiro, analise o texto de entrada. Se o texto for manifestamente inválido (curto, aleatório, sem nenhuma palavra-chave como "custo", "material", "serviço", "m²", etc.), sua tarefa é parar imediatamente. Neste caso, gere uma notaDaImportacao com a mensagem de erro: 'Alerta: O texto fornecido não parece ser uma composição de serviço. Não foi possível extrair dados. Por favor, verifique o texto e tente novamente.' e retorne um objeto Composicao com campos vazios ou nulos. NÃO tente criar uma composição a partir de um texto sem sentido.
 
-*   **3.2. Flexibilidade de Formato e Extração Completa:**
-    *   Se a entrada for válida, prossiga. Lembre-se que o texto pode ser puro ou Markdown. Sua inteligência deve identificar a estrutura em ambos os cenários. É **mandatório** que você tente extrair **todas as 7 seções** do padrão, se presentes.
+*   **3..2. Lógica de Processamento e Extração Completa:**
+    *   Se a entrada for válida, prossiga. É mandatório que você tente extrair todas as 7 seções do padrão, se presentes.
+    *   Se o texto de entrada já estiver no formato "Composição Padrão Quantisa", faça o parsing direto.
+    *   Se o texto estiver em um formato desconhecido, ative seu modo de adaptação inteligente.
 
-*   **3.3. Lógica de Processamento:**
-    *   **Se o texto de entrada já estiver no formato "Composição Padrão Quantisa V1.2"**, faça o parsing direto.
-    *   **Se o texto estiver em um formato desconhecido**, ative seu modo de adaptação inteligente.
+*   **3.3. Transparência e Sugestão de Código (Regras Obrigatórias):**
+    *   **Seja Conciso na notaDaImportacao:** Foque em resumir as principais adaptações e nos alertas de maior risco.
+    *   **Sugira o Código (OBRIGATÓRIO):** Analise o título e os insumos e, na notaDaImportacao, sugira um Grupo e um Subgrupo.
+    *   **Preencha os Campos de Grupo/Subgrupo:** Os valores que você sugerir para Grupo e Subgrupo devem também ser usados para preencher os campos grupo e subgrupo no objeto Composicao principal.
 
-*   **3.4. Transparência na \`notaDaImportacao\` (Regra de Ouro):**
-    *   **Seja Conciso:** Foque em resumir as **principais adaptações** e nos **alertas de maior risco**.
-    *   **Sugira o Código (OBRIGATÓRIO):** Analise o título e os insumos e, na \`notaDaImportacao\`, **sugira um Grupo** (ex: CIVIL, PINTURA) e um **Subgrupo** (ex: PISO, PAREDE). Esta sugestão é obrigatória.
+*   **3.4. Formatação de Saída (REGRAS ESPECÍFICAS COM EXEMPLOS):**
+    *   **Fontes e Referências (Seção 7.2):** Ao gerar o texto para o campo analiseEngenheiro.fontesReferencias, formate-o obrigatoriamente com quebras de linha (duplo \\n para criar um novo parágrafo) e negrito (**) em Markdown. O título de cada coeficiente deve estar em uma nova linha. Siga os exemplos abaixo rigorosamente:
+        *   **Exemplo 1 (Contrapiso):**
+            \`\`\`markdown
+            **Coeficientes de Consumo:** Traço de argamassa baseado em tabelas de referência (TCPO). Consumo de aditivo baseado em ficha técnica (Vedacit).
 
-*   **3.5. Formatação de Saída (Regra Específica):**
-    *   Para o campo \`analiseEngenheiro.quadroProdutividade\`, formate sempre a saída como uma **tabela Markdown simples e válida**. Não retorne como um objeto ou texto não formatado.
+            **Coeficientes de Produtividade:** Índice de 1,20 HH/m² mantido da composição original, considerado adequado por envolver duas etapas distintas.
+            \`\`\`
+        *   **Exemplo 2 (Alvenaria):**
+            \`\`\`markdown
+            **Coeficientes de Consumo:** Consumo de blocos conforme padrão de mercado (12,5 un/m²). Traços de argamassa e concreto baseados em TCPO.
+
+            **Coeficientes de Produtividade:** Índice de 1,40 HH/m² mantido, considerado conservador e adequado à complexidade e ao risco do trabalho em altura.
+            \`\`\`
+
+    *   **Quadro de Produtividade (Seção 7.3):** Para o campo \`analiseEngenheiro.quadroProdutividade\`, formate **SEMPRE** a saída como uma tabela Markdown simples e válida.
+        *   **REGRAS OBRIGATÓRIAS PARA A TABELA:**
+            1.  **CONTEÚDO MÍNIMO:** A tabela DEVE conter, no mínimo, **duas (2) linhas de dados**: a primeira linha para o \`**Índice Adotado**\` e a segunda (e subsequentes) para **pelo menos uma referência de mercado** (ex: SINAPI, TCPO, ou outra fonte pertinente).
+            2.  **COMPARAÇÃO É ESSENCIAL:** O objetivo principal deste quadro é a **comparação**. Se você não encontrar uma referência direta, use uma referência de um serviço similar e justifique na \`nota\` da Análise do Engenheiro.
+            3.  **PROIBIÇÃO:** **NÃO GERE UMA TABELA COM APENAS UMA LINHA DE DADOS.** Isso é considerado uma falha crítica.
+            4.  **FORMATAÇÃO:** Siga os exemplos abaixo **rigorosamente**. NUNCA retorne este campo como texto contínuo ou \`[Object Object]\`.
+
+        *   **EXEMPLOS (SEGUIR ESTRUTURA):**
+            *   Exemplo 1 (Alvenaria):
+                \`\`\`markdown
+                | Fonte de Referência | Produtividade (HH/m²) | Custo M.O. (R$/m²) | Variação vs. Adotado |
+                | :--- | :--- | :--- | :--- |
+                | **Índice Adotado (Total)** | **1,40** | **R$ 43,75** | **-** |
+                | SINAPI (Cód. 87282) | 0,71 | R$ 22,19 | -49,29% |
+                \`\`\`
+            *   Exemplo 2 (Impermeabilização):
+                \`\`\`markdown
+                | Fonte de Referência | Produtividade (HH/m²) | Custo M.O. (R$/m²) | Variação vs. Adotado |
+                | :--- | :--- | :--- | :--- |
+                | **Índice Adotado (Profis.+Ajud.)** | **0,87** | **R$ 27,45** | **-** |
+                | TCPO (Ref. 04.30.20.15) | 0,75 | R$ 23,44 | -14,62% |
+                \`\`\`
 
 **4.0 ESTRUTURA DE DADOS ALVO (JSON de Saída)**
 
-Sua saída deve aderir estritamente à seguinte estrutura TypeScript. **Sempre retorne um array \`[]\`**, mesmo que ele contenha apenas um único objeto.
+Sua saída deve aderir estritamente à seguinte estrutura TypeScript. Sempre retorne um array \`[]\`, mesmo que ele contenha apenas um único objeto.
 
 \`\`\`typescript
 export interface ComposicaoInsumo {
@@ -113,6 +147,7 @@ export interface Composicao {
   unidade: string;
   quantidadeReferencia: number;
   grupo: string;
+  subgrupo: string;
   tags: string[];
   classificacaoInterna: string;
   premissas: { escopo: string; metodo: string; incluso: string; naoIncluso: string; };
@@ -140,10 +175,12 @@ export interface Composicao {
 Sua resposta final deve ser um array de objetos \`Composicao\` bem-formado, pronto para ser validado pelo usuário. Não inclua nenhum texto ou explicação adicional fora da estrutura JSON solicitada.
     `;
 
+    const fullPrompt = `${prompt}\n\n---\nTexto para Análise:\n---\n${text}`;
+
     try {
         const response = await aiInstance.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: [{ parts: [{ text: text }], role: 'user' }, { parts: [{ text: prompt }], role: 'model' }],
+            contents: fullPrompt,
             config: {
                 responseMimeType: "application/json",
             }
@@ -199,7 +236,8 @@ export const reviseParsedComposition = async (composition: ParsedComposicao, ins
     try {
         const response = await aiInstance.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: [{ parts: [{ text: prompt }], role: 'user' }],
+            // FIX: Simplified 'contents' from [{ parts: [{ text: prompt }], role: 'user' }] to just prompt string for single-turn text.
+            contents: prompt,
             config: {
                 responseMimeType: "application/json",
             }
@@ -245,7 +283,7 @@ export const getDetailedScope = async (
     const prompt = `
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
-        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍCIOS EM SUA ANÁLISE):
+        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
         *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
         *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
         *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
@@ -331,7 +369,7 @@ export const processQueryResponses = async (
     const prompt = `
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
-        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍCIOS EM SUA ANÁLISE):
+        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
         *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
         *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
         *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
@@ -408,7 +446,7 @@ export const refineScopeFromEdits = async (
     const prompt = `
         1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)
         Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
-        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍCIOS EM SUA ANÁLISE):
+        Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):
         *   Busca pelo Custo-Benefício Ótimo: Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar more obras e assegurar uma margem de lucro saudável através da precisão técnica.
         *   Engenharia de Valor como Ferramenta Estratégica: Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
         *   Foco Obsessivo em Mitigação de Riscos: Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
@@ -543,7 +581,7 @@ export const getValueEngineeringAnalysis = async (
 **1.0 PERSONA E OBJETIVOS ESTRATÉGICOS (OBRIGATÓRIO INTERNALIZAR)**
 Você atuará como um **Engenheiro Civil Sênior** e especialista em orçamentos que opera com uma **Visão de Dono** absoluta. Seu objetivo final é gerar inteligência de negócio para garantir propostas competitivas, maximizar a lucratividade e entregar valor e segurança ao cliente.
 
-**Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍCIOS EM SUA ANÁLISE):**
+**Seus princípios de atuação são (VOCÊ DEVE APLICAR ESTES PRINCÍPIOS EM SUA ANÁLISE):**
 *   **Busca pelo Custo-Benefício Ótimo:** Seu foco é ser competitivo. Você deve sempre buscar a solução mais econômica possível, desde que ela respeite integralmente as normas técnicas e as recomendações dos fabricantes. Seu objetivo é garantir bons preços para ganhar mais obras e assegurar uma margem de lucro saudável através da precisão técnica.
 *   **Engenharia de Valor como Ferramenta Estratégica:** Você entende que o menor preço nem sempre é a melhor solução. Você deve ser capaz de propor alternativas de maior valor agregado que, mesmo que mais caras, ofereçam maior durabilidade, segurança ou performance, justificando o investimento e diferenciando nossa proposta da concorrência.
 *   **Foco Obsessivo em Mitigação de Riscos:** Sua primeira prioridade é identificar e neutralizar qualquer risco (técnico, executivo, logístico ou de escopo) antes que ele se materialize em prejuízo, retrabalho ou atraso.
@@ -574,7 +612,7 @@ Siga esta regra para selecionar quantos itens analisar. SEJA RIGOROSO COM A QUAN
     - Se houver 61 a 70 serviços, analise **pelo menos 15** itens.
     - Se houver 71 a 80 serviços, analise **pelo menos 17** itens.
     - Se houver 81 a 90 serviços, analise **pelo menos 19** itens.
-    - Se houver 91 a 100 serviços, analise **pelo menos 21** itens.
+    - Se hover 91 a 100 serviços, analise **pelo menos 21** itens.
     - Se houver mais de 100 serviços, analise **pelo menos 25** itens.
 Para cada item selecionado, preencha 'itemId' e 'itemName' no JSON de saída e execute o PASSO 2.
 
@@ -835,6 +873,7 @@ export const createTranscriptionSession = (
             inputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
 
             sessionPromise = aiInstance.live.connect({
+                // FIX: Corrected model name from 'gemini-25-flash...' to 'gemini-2.5-flash...'
                 model: 'gemini-2.5-flash-native-audio-preview-09-2025',
                 callbacks: {
                     onopen: () => {
@@ -907,4 +946,114 @@ export const createTranscriptionSession = (
     };
     
     return { start, stop };
+};
+
+export const parseInsumos = async (text: string): Promise<Partial<Insumo>[]> => {
+    const aiInstance = getAiInstance();
+    if (!aiInstance) throw new Error("Serviço de IA não está configurado.");
+
+    const prompt = `
+**1.0 PERSONA E OBJETIVOS ESTRATÉGICOS**
+
+Você atuará como um Engenheiro Civil Sênior e especialista em orçamentos que opera com uma Visão de Dono absoluta. Seu objetivo final é gerar dados estruturados e precisos para garantir propostas competitivas. Seus princípios são:
+
+*   **Precisão Acima de Tudo:** O custo unitário de um insumo é a base de todo o orçamento. Erros aqui invalidam todo o trabalho subsequente.
+*   **Inteligência de Compra:** Você pensa como um comprador de uma construtora. Você entende a diferença entre a unidade que se usa na obra (consumo) e a unidade que se compra no fornecedor (compra).
+*   **Mitigação de Riscos:** Dados ambíguos são um risco. Sua função é clarificar a informação e, quando não for possível, sinalizar a ambiguidade de forma explícita.
+
+**2.0 TAREFA PRINCIPAL**
+
+Sua tarefa é receber um texto de entrada contendo uma lista de insumos e retornar um array de objetos JSON perfeitamente estruturados, aderindo estritamente à interface TypeScript fornecida e às regras de inteligência abaixo.
+
+**3.0 REGRAS DE INTELIGÊNCIA E PARSING (OBRIGATÓRIAS)**
+
+*   **3.1. Parsing Flexível:** O texto de entrada pode ser mal formatado. Tente extrair os dados (\`Nome\`, \`Unidade\`, \`Custo\`) mesmo que não haja separadores claros como ';'.
+*   **3.2. Extração de Dados Adicionais:**
+    *   **Marca:** Se o nome do item contiver uma marca clara (ex: "Viaplus 7000", "Aditivo (Bianco ou similar)", "Massa Acrílica (Suvinil)"), extraia-a para o campo \`marca\`.
+*   **3.3. Lógica de Geração Dupla (REGRA CRÍTICA):**
+    *   **Diferenciação:** Para cada item, identifique se ele é vendido em uma embalagem que pode ser fracionada (ex: galão, lata, saco, rolo) ou se é uma unidade indivisível (ex: uma ferramenta, um dispenser).
+    *   **Itens Fracionáveis (Gerar 2 Registros):** Se o item for fracionável, **você DEVE gerar DOIS objetos \`Insumo\` distintos**:
+        1.  **Um para a Unidade de Consumo:** Calcule o custo da unidade fracionada (ex: custo por Litro, por Kg, por metro). O campo \`nome\` DEVE ser o nome completo do produto, incluindo a embalagem (ex: "Massa Acrílica (Lata 18L)"), para que a origem do cálculo seja clara. A \`unidade\` deve ser a unidade de consumo (L, kg, m). O \`custo\` deve ser o valor calculado.
+        2.  **Um para a Unidade de Compra:** Mantenha o custo da embalagem fechada. O campo \`nome\` DEVE ser o nome completo, incluindo a embalagem (ex: "Massa Acrílica (Lata 18L)"). A \`unidade\` deve ser a unidade de compra (ex: "Lata 18L" ou "un"). O \`custo\` deve ser o valor original da embalagem.
+    *   **Itens Não Fracionáveis (Gerar 1 Registro):** Se o item não for fracionável, gere apenas UM objeto \`Insumo\`.
+    *   **Transparência:** No campo \`observacao\`, explique a origem do custo (ex: "Custo por Litro calculado...", "Custo da embalagem fechada.", "Custo unitário.").
+*   **3.4. Inferência de Tipo:** Classifique o \`tipo\` do insumo com base em palavras-chave:
+    *   'HH', 'Profissional', 'Ajudante', 'Engenheiro' -> \`'MaoObra'\`
+    *   'Locação', 'Caminhão', 'Betoneira', 'Martelete', 'Andaimes' -> \`'Equipamento'\`
+    *   Todos os outros -> \`'Material'\`
+*   **3.5. Tratamento de Erros:** Se uma linha for completamente ininteligível, ignore-a.
+
+**4.0 EXEMPLO DE GERAÇÃO DUPLA**
+
+*   **Entrada:** \`Massa Acrílica (Suvinil); Lata 18L; 150.00\`
+*   **Saída Esperada (Array com 2 objetos):**
+    \`\`\`json
+    [
+      {
+        "nome": "Massa Acrílica (Lata 18L)",
+        "unidade": "L",
+        "custo": 8.33,
+        "tipo": "Material",
+        "marca": "Suvinil",
+        "observacao": "Custo por Litro calculado com base no preço da Lata de 18L."
+      },
+      {
+        "nome": "Massa Acrílica (Lata 18L)",
+        "unidade": "un",
+        "custo": 150.00,
+        "tipo": "Material",
+        "marca": "Suvinil",
+        "observacao": "Custo da embalagem fechada."
+      }
+    ]
+    \`\`\`
+
+**5.0 ESTRUTURA DE DADOS ALVO (JSON de Saída OBRIGATÓRIO)**
+
+Sua saída deve ser um array \`[]\` de objetos que sigam esta interface. Não inclua nenhum texto ou explicação fora da estrutura JSON.
+
+\`\`\`typescript
+export interface Insumo {
+  id: string; // Gerar um ID temporário, ex: "temp-1", "temp-2"
+  nome: string;
+  unidade: string;
+  custo: number;
+  tipo: 'Material' | 'MaoObra' | 'Equipamento';
+  marca?: string;
+  observacao?: string;
+}
+\`\`\`
+
+**6.0 SAÍDA**
+Retorne APENAS o array de objetos JSON.
+`;
+
+    const fullPrompt = `${prompt}\n\n---\nTexto para Análise:\n---\n${text}`;
+
+    try {
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: fullPrompt,
+            config: {
+                responseMimeType: "application/json",
+            }
+        });
+
+        const jsonRegex = /```json\s*([\s\S]*?)\s*```/;
+        let textToParse = response.text;
+        const match = textToParse.match(jsonRegex);
+        if (match && match[1]) {
+            textToParse = match[1];
+        }
+
+        const parsedData = JSON.parse(textToParse);
+        if (Array.isArray(parsedData)) {
+            return parsedData;
+        }
+        throw new Error("A IA não retornou um array de insumos.");
+
+    } catch (error) {
+        console.error("Erro ao processar insumos:", error);
+        throw new Error("Não foi possível interpretar o texto dos insumos. Verifique o formato e tente novamente.");
+    }
 };

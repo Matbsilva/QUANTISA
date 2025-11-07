@@ -13,6 +13,25 @@
   }
 }
 
+@layer components {
+  /*
+    FIX: Solução Definitiva para o texto invisível na tabela Markdown.
+    As regras abaixo usam CSS puro para garantir alta especificidade,
+    sobrescrevendo os estilos conflitantes do plugin @tailwindcss/typography.
+    Isso força a cor correta do texto em todas as células da tabela (th, td),
+    resolvendo o bug de visibilidade nos temas claro e escuro.
+  */
+  .prose table th,
+  .prose table td {
+    color: #1e2937; /* Cor do texto para o tema claro (gray-800) */
+  }
+
+  .dark .prose table th,
+  .dark .prose table td {
+    color: #cbd5e1; /* Cor do texto para o tema escuro (gray-300) */
+  }
+}
+
 /* Barra de rolagem personalizada para modo escuro em navegadores Webkit, atualizada com as novas cores slate */
 .dark ::-webkit-scrollbar {
   width: 12px;

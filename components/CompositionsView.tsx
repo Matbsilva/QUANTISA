@@ -1,14 +1,6 @@
-
-
-
-
-
-
-
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Composicao, ComposicaoInsumo, ComposicaoMaoDeObra } from '../types';
-import { Button, SearchIcon, Spinner } from './Shared';
+import { Button, SearchIcon, Spinner, Modal, TrashIcon } from './Shared';
 import { parseCompositions, reviseParsedComposition, ParsedComposicao } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -23,44 +15,23 @@ type ReviewableComposicao = ParsedComposicao & {
     }
 };
 
-const MarkdownRenderer: React.FC<{ text: string | undefined, className?: string }> = ({ text, className }) => {
-    if (!text) return <p className={className}></p>;
-    // Simple renderer for **bold** text
-    const parts = text.split(/(\*\*.*?\*\*)/g).filter(Boolean);
-    return (
-        <p className={className}>
-            {parts.map((part, i) => {
-                if (part.startsWith('**') && part.endsWith('**')) {
-                    return <strong key={i}>{part.slice(2, -2)}</strong>;
-                }
-                return part;
-            })}
-        </p>
-    );
-};
-
-// --- Full Detail Display for Review ---
-const CompositionDetailDisplay: React.FC<{
-    composition: ReviewableComposicao;
-    index: number;
-    onRequestRevision: (index: number, instruction: string) => void;
-    onFieldChange: (index: number, field: 'instruction' | 'grupo' | 'subgrupo', value: string) => void;
-}> = ({ composition, index, onRequestRevision, onFieldChange }) => {
-
-    const Section = ({ title, children }: { title: string, children?: React.ReactNode }) => (
+// --- Full, Read-Only Detail Display for Modal View ---
+const FullCompositionDetailView: React.FC<{ composition: Composicao }> = ({ composition }) => {
+    
+    const Section = ({ title, children, noTextColor = false }: { title: string, children?: React.ReactNode, noTextColor?: boolean }) => (
         <div className="py-4">
-            <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 border-b-2 border-primary pb-1 mb-3">{title}</h3>
-            <div className="space-y-2 text-gray-800 dark:text-gray-300">{children}</div>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-quantisa-blue dark:text-blue-400 border-b-2 border-quantisa-blue dark:border-blue-400 pb-1 mb-3">{title}</h3>
+            <div className={`space-y-2 ${noTextColor ? '' : 'text-gray-800 dark:text-gray-300'}`}>{children}</div>
         </div>
     );
     
     const Table = ({ headers, children }: { headers: string[], children?: React.ReactNode }) => (
         <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-                <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-slate-200 dark:bg-slate-700">
-                    <tr>{headers.map(h => <th key={h} className="px-4 py-2 font-medium">{h}</th>)}</tr>
+                <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-slate-200 dark:bg-slate-700">
+                    <tr>{headers.map(h => <th key={h} className="px-4 py-2 font-semibold">{h}</th>)}</tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-700 dark:text-gray-300">{children}</tbody>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-900 dark:text-gray-100">{children}</tbody>
             </table>
         </div>
     );
@@ -70,42 +41,24 @@ const CompositionDetailDisplay: React.FC<{
     );
 
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6 border border-gray-200 dark:border-gray-700 text-base text-gray-900 dark:text-gray-200">
+        <div className="p-2 text-base font-sans">
             {/* Header */}
             <div>
-                <p className="font-bold text-xl text-primary">{composition.codigo || 'CÓDIGO PENDENTE'} - {composition.titulo}</p>
+                <p className="font-bold text-xl text-primary">{composition.codigo} - {composition.titulo}</p>
                 <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-gray-400 mt-2">
                     <span><strong>Unidade:</strong> {composition.unidade}</span>
                     <span><strong>Qtd. Ref:</strong> {composition.quantidadeReferencia}</span>
                     <span><strong>Grupo:</strong> {composition.grupo}</span>
-                    <span><strong>Tags:</strong> {composition.tags?.join(', ')}</span>
-                    <span><strong>Classificação:</strong> {composition.classificacaoInterna}</span>
+                    <span><strong>Subgrupo:</strong> {composition.subgrupo}</span>
                 </div>
             </div>
-
-            {/* Import Note & Code Sugestion */}
-            {composition.analiseEngenheiro?.notaDaImportacao && (
-                <div className="my-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 rounded-md">
-                    <h4 className="font-semibold text-sm text-yellow-800 dark:text-yellow-200">Nota da Importação (IA):</h4>
-                     <MarkdownRenderer text={composition.analiseEngenheiro.notaDaImportacao} className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap mt-1" />
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Grupo Sugerido (Editar)</label>
-                            <input type="text" value={composition.reviewState.grupo} onChange={e => onFieldChange(index, 'grupo', e.target.value.toUpperCase())} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm bg-white text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 p-2" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Subgrupo Sugerido (Editar)</label>
-                             <input type="text" value={composition.reviewState.subgrupo} onChange={e => onFieldChange(index, 'subgrupo', e.target.value.toUpperCase())} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm bg-white text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 p-2" />
-                        </div>
-                    </div>
-                </div>
-            )}
-
+            
+            {/* Sections */}
             <Section title="1. Premissas Técnicas e de Escopo">
-                 <MarkdownRenderer text={`**Escopo:** ${composition.premissas?.escopo}`} />
-                 <MarkdownRenderer text={`**Método:** ${composition.premissas?.metodo}`} />
-                 <MarkdownRenderer text={`**Incluso:** ${composition.premissas?.incluso}`} />
-                 <MarkdownRenderer text={`**Não Incluso:** ${composition.premissas?.naoIncluso}`} />
+                 <p><strong>Escopo:</strong> {composition.premissas?.escopo}</p>
+                 <p><strong>Método:</strong> {composition.premissas?.metodo}</p>
+                 <p><strong>Incluso:</strong> {composition.premissas?.incluso}</p>
+                 <p><strong>Não Incluso:</strong> {composition.premissas?.naoIncluso}</p>
             </Section>
             
             <Section title={`2. Lista de Insumos (Coeficientes para 1,00 ${composition.unidade})`}>
@@ -131,7 +84,7 @@ const CompositionDetailDisplay: React.FC<{
                 <h4 className="font-semibold text-sm mt-3 mb-1 text-gray-700 dark:text-gray-300">4.1 Lista de Compra de Materiais</h4>
                  <Table headers={['Item', 'Un. Compra', 'Qtd. Bruta', 'Qtd. a Comprar', 'Custo Estimado']}>
                      {composition.quantitativosConsolidados?.listaCompraMateriais?.map((item, i) => (
-                         <tr key={i}><td className="px-4 py-1">{item.item}</td><td className="px-4 py-1">{item.unidadeCompra}</td><td className="px-4 py-1">{item.quantidadeBruta?.toFixed(2)}</td><td className="px-4 py-1 font-bold">{item.quantidadeAComprar}</td><td className="px-4 py-1 font-mono">{item.custoTotalEstimado?.toFixed(2)}</td></tr>
+                         <tr key={i}><td className="px-4 py-1">{item.item}</td><td className="px-4 py-1">{item.unidadeCompra}</td><td className="px-4 py-1">{item.quantidadeBruta?.toFixed(2)}</td><td className="px-4 py-1">{item.quantidadeAComprar}</td><td className="px-4 py-1 font-mono">{item.custoTotalEstimado?.toFixed(2)}</td></tr>
                      ))}
                  </Table>
             </Section>
@@ -157,23 +110,180 @@ const CompositionDetailDisplay: React.FC<{
             </Section>
             
             <Section title="6. Guias, Segurança e Qualidade">
-                <MarkdownRenderer text={`**Dicas de Execução:** ${composition.guias?.dicasExecucao}`} />
-                <MarkdownRenderer text={`**Alertas de Segurança:** ${composition.guias?.alertasSeguranca}`} />
-                <MarkdownRenderer text={`**Critérios de Qualidade:** ${composition.guias?.criteriosQualidade}`} />
+                <p><strong>Dicas de Execução:</strong> {composition.guias?.dicasExecucao}</p>
+                <p><strong>Alertas de Segurança:</strong> {composition.guias?.alertasSeguranca}</p>
+                <p><strong>Critérios de Qualidade:</strong> {composition.guias?.criteriosQualidade}</p>
             </Section>
 
-            <Section title="7. Análise Técnica do Engenheiro">
-                 <MarkdownRenderer text={`**Nota:** ${composition.analiseEngenheiro?.nota}`} />
-                 <MarkdownRenderer text={`**Fontes e Referências:** ${composition.analiseEngenheiro?.fontesReferencias}`} />
-                 <div>
-                    <p><strong>Quadro de Produtividade:</strong></p>
-                    <div className="prose prose-sm dark:prose-invert max-w-none prose-table:w-full prose-td:px-2 prose-td:py-1 prose-th:px-2 prose-th:py-1">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {composition.analiseEngenheiro?.quadroProdutividade || ''}
-                        </ReactMarkdown>
+            <Section title="7. Análise Técnica do Engenheiro" noTextColor>
+                <div className="prose dark:prose-invert max-w-none text-sm">
+                     <div>
+                        <p><strong>Nota:</strong></p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro?.nota || ''}</ReactMarkdown>
+                    </div>
+                     <div>
+                        <p><strong>Fontes e Referências:</strong></p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro?.fontesReferencias || ''}</ReactMarkdown>
+                    </div>
+                     <div>
+                        <p><strong>Quadro de Produtividade:</strong></p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro?.quadroProdutividade || ''}</ReactMarkdown>
+                    </div>
+                     <div>
+                        <p><strong>Análise e Recomendação:</strong></p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro?.analiseRecomendacao || ''}</ReactMarkdown>
                     </div>
                 </div>
-                 <MarkdownRenderer text={`**Análise e Recomendação:** ${composition.analiseEngenheiro?.analiseRecomendacao}`} />
+            </Section>
+        </div>
+    );
+};
+
+
+// --- Full Detail Display for Review ---
+const CompositionDetailDisplay: React.FC<{
+    composition: ReviewableComposicao;
+    index: number;
+    onRequestRevision: (index: number, instruction: string) => void;
+    onFieldChange: (index: number, field: 'instruction' | 'grupo' | 'subgrupo', value: string) => void;
+}> = ({ composition, index, onRequestRevision, onFieldChange }) => {
+
+    const Section = ({ title, children, noTextColor = false }: { title: string, children?: React.ReactNode, noTextColor?: boolean }) => (
+        <div className="py-4">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-quantisa-blue dark:text-blue-400 border-b-2 border-quantisa-blue dark:border-blue-400 pb-1 mb-3">{title}</h3>
+            <div className={`space-y-2 ${noTextColor ? '' : 'text-gray-800 dark:text-gray-300'}`}>{children}</div>
+        </div>
+    );
+    
+    const Table = ({ headers, children }: { headers: string[], children?: React.ReactNode }) => (
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+                <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-slate-200 dark:bg-slate-700">
+                    <tr>{headers.map(h => <th key={h} className="px-4 py-2 font-semibold">{h}</th>)}</tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700 text-gray-900 dark:text-gray-100">{children}</tbody>
+            </table>
+        </div>
+    );
+    
+    const renderInsumoRow = (insumo: ComposicaoInsumo, i: number) => (
+         <tr key={i}><td className="px-4 py-1">{insumo.item}</td><td className="px-4 py-1">{insumo.unidade}</td><td className="px-4 py-1">{insumo.quantidade?.toFixed(3)}</td><td className="px-4 py-1 font-mono">{insumo.valorUnitario?.toFixed(2)}</td><td className="px-4 py-1 font-mono">{insumo.valorTotal?.toFixed(2)}</td></tr>
+    );
+
+    return (
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 mb-6 border border-gray-200 dark:border-gray-700 text-base font-sans">
+            {/* Header */}
+            <div>
+                <p className="font-bold text-xl text-primary">{composition.codigo || 'CÓDIGO PENDENTE'} - {composition.titulo}</p>
+                <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-gray-400 mt-2">
+                    <span><strong>Unidade:</strong> {composition.unidade}</span>
+                    <span><strong>Qtd. Ref:</strong> {composition.quantidadeReferencia}</span>
+                    <span><strong>Grupo:</strong> {composition.grupo}</span>
+                    <span><strong>Tags:</strong> {composition.tags?.join(', ')}</span>
+                    <span><strong>Classificação:</strong> {composition.classificacaoInterna}</span>
+                </div>
+            </div>
+
+            {/* Import Note & Code Sugestion */}
+            {composition.analiseEngenheiro?.notaDaImportacao && (
+                <div className="my-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 rounded-md">
+                    <h4 className="font-semibold text-sm text-yellow-800 dark:text-yellow-200">Nota da Importação (IA):</h4>
+                    <div className="text-sm text-yellow-700 dark:text-yellow-300 whitespace-pre-wrap mt-1">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro.notaDaImportacao}</ReactMarkdown>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Grupo Sugerido (Editar)</label>
+                            <input type="text" value={composition.reviewState.grupo} onChange={e => onFieldChange(index, 'grupo', e.target.value.toUpperCase())} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm bg-white text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 p-2" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Subgrupo Sugerido (Editar)</label>
+                             <input type="text" value={composition.reviewState.subgrupo} onChange={e => onFieldChange(index, 'subgrupo', e.target.value.toUpperCase())} className="mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm bg-white text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 p-2" />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <Section title="1. Premissas Técnicas e de Escopo">
+                 <p><strong>Escopo:</strong> {composition.premissas?.escopo}</p>
+                 <p><strong>Método:</strong> {composition.premissas?.metodo}</p>
+                 <p><strong>Incluso:</strong> {composition.premissas?.incluso}</p>
+                 <p><strong>Não Incluso:</strong> {composition.premissas?.naoIncluso}</p>
+            </Section>
+            
+            <Section title={`2. Lista de Insumos (Coeficientes para 1,00 ${composition.unidade})`}>
+                <h4 className="font-semibold text-sm mt-3 mb-1 text-gray-700 dark:text-gray-300">2.1 Materiais</h4>
+                <Table headers={['Item', 'Un.', 'Qtd.', 'V.U.', 'V.T.']}>
+                    {composition.insumos?.materiais?.map(renderInsumoRow)}
+                </Table>
+                <h4 className="font-semibold text-sm mt-4 mb-1 text-gray-700 dark:text-gray-300">2.2 Equipamentos</h4>
+                <Table headers={['Item', 'Un.', 'Qtd.', 'V.U.', 'V.T.']}>
+                    {composition.insumos?.equipamentos?.map(renderInsumoRow)}
+                </Table>
+            </Section>
+            
+            <Section title={`3. Estimativa de Mão de Obra (HH) (para 1,00 ${composition.unidade})`}>
+                 <Table headers={['Função', 'HH/Unidade', 'Custo Unit.', 'Custo Total']}>
+                     {composition.maoDeObra?.map((mo, i) => (
+                         <tr key={i}><td className="px-4 py-1">{mo.funcao}</td><td className="px-4 py-1">{mo.hhPorUnidade}</td><td className="px-4 py-1 font-mono">{mo.custoUnitario?.toFixed(2)}</td><td className="px-4 py-1 font-mono">{mo.custoTotal?.toFixed(2)}</td></tr>
+                     ))}
+                 </Table>
+            </Section>
+
+             <Section title={`4. Quantitativos Consolidados (para ${composition.quantidadeReferencia} ${composition.unidade})`}>
+                <h4 className="font-semibold text-sm mt-3 mb-1 text-gray-700 dark:text-gray-300">4.1 Lista de Compra de Materiais</h4>
+                 <Table headers={['Item', 'Un. Compra', 'Qtd. Bruta', 'Qtd. a Comprar', 'Custo Estimado']}>
+                     {composition.quantitativosConsolidados?.listaCompraMateriais?.map((item, i) => (
+                         <tr key={i}><td className="px-4 py-1">{item.item}</td><td className="px-4 py-1">{item.unidadeCompra}</td><td className="px-4 py-1">{item.quantidadeBruta?.toFixed(2)}</td><td className="px-4 py-1">{item.quantidadeAComprar}</td><td className="px-4 py-1 font-mono">{item.custoTotalEstimado?.toFixed(2)}</td></tr>
+                     ))}
+                 </Table>
+            </Section>
+            
+            <Section title="5. Indicadores Chave de Custo e Planejamento">
+                 <Table headers={['Indicador', 'Unidade', `Valor (por ${composition.unidade})`, `Valor Total (para ${composition.quantidadeReferencia} ${composition.unidade})`]}>
+                    {composition.indicadores && Object.entries(composition.indicadores).map(([key, value]) => {
+                        if (key === 'maoDeObraDetalhada') return null;
+                        const label = key.replace(/_/g, ' ').replace(/porUnidade|total/, '').replace(/\b\w/g, l => l.toUpperCase());
+                        if (key.endsWith('_porUnidade')) {
+                             const totalKey = key.replace('_porUnidade', '_total') as keyof typeof composition.indicadores;
+                             const totalValue = composition.indicadores[totalKey];
+                            return (
+                                <tr key={key}><td className="px-4 py-1 font-semibold">{label}</td><td className="px-4 py-1">{typeof value === 'number' ? 'R$' : ''}</td><td className="px-4 py-1 font-mono">{typeof value === 'number' ? value.toFixed(2) : ''}</td><td className="px-4 py-1 font-mono">{typeof totalValue === 'number' ? totalValue.toFixed(2) : ''}</td></tr>
+                            )
+                        }
+                        return null;
+                    })}
+                     {composition.indicadores?.maoDeObraDetalhada?.map(mo => (
+                         <tr key={mo.funcao}><td className="px-4 py-1 font-semibold">{mo.funcao}</td><td className="px-4 py-1">HH</td><td className="px-4 py-1 font-mono">{mo.hhPorUnidade?.toFixed(2)}</td><td className="px-4 py-1 font-mono">{mo.hhTotal?.toFixed(2)}</td></tr>
+                     ))}
+                 </Table>
+            </Section>
+            
+            <Section title="6. Guias, Segurança e Qualidade">
+                <p><strong>Dicas de Execução:</strong> {composition.guias?.dicasExecucao}</p>
+                <p><strong>Alertas de Segurança:</strong> {composition.guias?.alertasSeguranca}</p>
+                <p><strong>Critérios de Qualidade:</strong> {composition.guias?.criteriosQualidade}</p>
+            </Section>
+
+            <Section title="7. Análise Técnica do Engenheiro" noTextColor>
+                <div className="prose dark:prose-invert max-w-none">
+                    <div>
+                        <p><strong>Nota:</strong></p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro?.nota || ''}</ReactMarkdown>
+                    </div>
+                     <div>
+                        <p><strong>Fontes e Referências:</strong></p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro?.fontesReferencias || ''}</ReactMarkdown>
+                    </div>
+                     <div>
+                        <p><strong>Quadro de Produtividade:</strong></p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro?.quadroProdutividade || ''}</ReactMarkdown>
+                    </div>
+                     <div>
+                        <p><strong>Análise e Recomendação:</strong></p>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{composition.analiseEngenheiro?.analiseRecomendacao || ''}</ReactMarkdown>
+                    </div>
+                </div>
             </Section>
 
 
@@ -203,36 +313,65 @@ const CompositionDetailDisplay: React.FC<{
 };
 
 // --- Summary Card for Search View ---
-const CompositionSummaryCard: React.FC<{ composition: Composicao }> = ({ composition }) => {
+const CompositionSummaryCard: React.FC<{ 
+    composition: Composicao,
+    onViewDetails: () => void,
+    onDelete: () => void
+}> = ({ composition, onViewDetails, onDelete }) => {
     return (
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 mb-4 border border-gray-200 dark:border-gray-700">
-            <div className="border-b border-gray-200 dark:border-gray-700 pb-2 mb-2">
-                <p className="font-mono text-sm text-primary">{composition.codigo}</p>
-                <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200">{composition.titulo}</h3>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 group transition-shadow hover:shadow-xl">
+            <div className="p-4">
+                 <div 
+                    className="flex justify-between items-start border-b border-gray-200 dark:border-gray-700 pb-2 mb-3 cursor-pointer"
+                    onClick={onViewDetails}
+                >
+                    <div>
+                        <p className="font-mono text-sm text-primary group-hover:underline">{composition.codigo}</p>
+                        <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200">{composition.titulo}</h3>
+                    </div>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                        className="text-gray-400 hover:text-danger p-1 rounded-full"
+                        aria-label={`Excluir composição ${composition.titulo}`}
+                    >
+                        <TrashIcon className="w-5 h-5" />
+                    </button>
+                </div>
+                 <div 
+                    className="space-y-4 cursor-pointer"
+                    onClick={onViewDetails}
+                >
+                    <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 dark:text-gray-400">
+                        <span><strong>Unidade:</strong> {composition.unidade}</span>
+                        <span><strong>Qtd. Ref:</strong> {composition.quantidadeReferencia} {composition.unidade}</span>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md">
+                        <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">📋 PREMISSAS & ESCOPO</h4>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 italic space-y-1">
+                            <p><strong>Escopo:</strong> {composition.premissas?.escopo}</p>
+                            <p><strong>Método:</strong> {composition.premissas?.metodo}</p>
+                        </div>
+                    </div>
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md">
+                        <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">📊 INDICADORES-CHAVE (por {composition.unidade})</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1 text-sm text-gray-800 dark:text-gray-300">
+                            <span><strong>Mat:</strong> R$ {composition.indicadores?.custoMateriais_porUnidade?.toFixed(2)}</span>
+                            <span><strong>M.O.:</strong> R$ {composition.indicadores?.custoMaoDeObra_porUnidade?.toFixed(2)}</span>
+                            <span><strong>Equip:</strong> R$ {composition.indicadores?.custoEquipamentos_porUnidade?.toFixed(2)}</span>
+                             {composition.indicadores?.maoDeObraDetalhada?.map(mo => (
+                                <span key={mo.funcao}><strong>{mo.funcao.match(/\(([^)]+)\)/)?.[1] || mo.funcao.split(' ')[0]}:</strong> {mo.hhPorUnidade?.toFixed(2)} HH</span>
+                            ))}
+                            <span><strong>Peso:</strong> {composition.indicadores?.pesoMateriais_porUnidade?.toFixed(2)} kg</span>
+                            <span><strong>Entulho:</strong> {composition.indicadores?.volumeEntulho_porUnidade?.toFixed(3)} m³</span>
+                        </div>
+                    </div>
+                    <div className="text-right pt-2">
+                        <span className="font-bold text-primary dark:text-indigo-400 text-sm hover:underline">
+                            Ver Detalhes Completos
+                        </span>
+                    </div>
+                </div>
             </div>
-             <div className="grid grid-cols-2 gap-2 text-sm text-gray-600 dark:text-gray-400 mb-4">
-                <span><strong>Unidade:</strong> {composition.unidade}</span>
-                <span><strong>Qtd. Ref:</strong> {composition.quantidadeReferencia} {composition.unidade}</span>
-             </div>
-             <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md mb-4">
-                 <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">📋 PREMISSAS & ESCOPO</h4>
-                 <MarkdownRenderer text={`**Escopo:** ${composition.premissas?.escopo}`} className="text-sm text-gray-600 dark:text-gray-400 italic" />
-                 <MarkdownRenderer text={`**Incluso:** ${composition.premissas?.incluso}`} className="text-sm text-gray-600 dark:text-gray-400 italic" />
-             </div>
-              <div className="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-md">
-                 <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300 mb-2">📊 INDICADORES-CHAVE (por {composition.unidade})</h4>
-                 <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 text-sm text-gray-800 dark:text-gray-300">
-                     <span><strong>Mat:</strong> R$ {composition.indicadores?.custoMateriais_porUnidade?.toFixed(2)}</span>
-                     <span><strong>M.O.:</strong> R$ {composition.indicadores?.custoMaoDeObra_porUnidade?.toFixed(2)}</span>
-                     <span><strong>Equip:</strong> R$ {composition.indicadores?.custoEquipamentos_porUnidade?.toFixed(2)}</span>
-                     {composition.indicadores?.maoDeObraDetalhada?.map(mo => (
-                         <span key={mo.funcao}><strong>{mo.funcao.match(/\(([^)]+)\)/)?.[1] || mo.funcao.split(' ')[0]}:</strong> {mo.hhPorUnidade?.toFixed(2)} HH</span>
-                     ))}
-                 </div>
-             </div>
-             <div className="text-right mt-4">
-                <Button variant="ghost" size="sm">Ver Detalhes Completos</Button>
-             </div>
         </div>
     );
 };
@@ -241,42 +380,59 @@ const CompositionSummaryCard: React.FC<{ composition: Composicao }> = ({ composi
 export const CompositionsView: React.FC<{
     composicoes: Composicao[];
     setComposicoes: React.Dispatch<React.SetStateAction<Composicao[]>>;
-    showToast: (message: string) => void;
+    showToast: (message: string, type?: 'success' | 'error') => void;
 }> = ({ composicoes, setComposicoes, showToast }) => {
     const [activeTab, setActiveTab] = useState<'importar' | 'pesquisar'>('importar');
     const [compositionText, setCompositionText] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [composicoesParaRevisao, setComposicoesParaRevisao] = useState<ReviewableComposicao[] | null>(null);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [compositionToDelete, setCompositionToDelete] = useState<Composicao | null>(null);
+    const [compositionToView, setCompositionToView] = useState<Composicao | null>(null);
+
+    const filteredCompositions = useMemo(() => {
+        if (!searchQuery) return composicoes;
+        return composicoes.filter(c => 
+            c.titulo.toLowerCase().includes(searchQuery.toLowerCase()) || 
+            c.codigo.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+    }, [composicoes, searchQuery]);
+
+    const handleConfirmDelete = () => {
+        if (!compositionToDelete) return;
+        setComposicoes(prev => prev.filter(c => c.id !== compositionToDelete.id));
+        showToast(`Composição "${compositionToDelete.titulo}" excluída com sucesso.`);
+        setCompositionToDelete(null);
+    };
+
+    const handleTextareaInput = (e: React.FormEvent<HTMLTextAreaElement>) => {
+        const textarea = e.currentTarget;
+        textarea.style.height = 'auto'; // Reset height to recalculate
+        textarea.style.height = `${textarea.scrollHeight}px`;
+    };
 
     const handleProcessar = async () => {
         if (!compositionText.trim()) {
-            showToast("O campo de texto não pode estar vazio.");
+            showToast("O campo de texto não pode estar vazio.", 'error');
             return;
         }
         setIsProcessing(true);
         try {
             const parsed = await parseCompositions(compositionText);
 
-            // Aprimoramento do Fluxo de Erro
-            if (
+            const isInvalidInputAlert =
                 parsed.length > 0 &&
                 !parsed[0].titulo &&
-                parsed[0].analiseEngenheiro?.notaDaImportacao?.includes('Alerta:')
-            ) {
-                showToast(parsed[0].analiseEngenheiro.notaDaImportacao);
-                // Permanece na tela de importação, não avança para revisão
-                return; 
+                parsed[0].analiseEngenheiro?.notaDaImportacao?.includes('Alerta:');
+
+            if (isInvalidInputAlert) {
+                showToast(parsed[0].analiseEngenheiro!.notaDaImportacao!, 'error');
+                return;
             }
 
             const reviewable = parsed.map(p => {
-                let suggestedGrupo = 'GERAL';
-                let suggestedSubgrupo = 'GERAL';
-                const nota = p.analiseEngenheiro?.notaDaImportacao || '';
-                const match = nota.match(/Grupo: (.*?), Subgrupo: (.*?)\./);
-                if (match) {
-                    suggestedGrupo = match[1].trim();
-                    suggestedSubgrupo = match[2].trim();
-                }
+                const suggestedGrupo = p.grupo || 'GERAL'; 
+                const suggestedSubgrupo = p.subgrupo || 'GERAL'; 
 
                 return {
                     ...p,
@@ -293,7 +449,7 @@ export const CompositionsView: React.FC<{
             showToast(`${parsed.length} composição(ões) processada(s) com sucesso. Por favor, revise abaixo.`);
         } catch (error) {
             console.error(error);
-            showToast(error instanceof Error ? error.message : "Um erro desconhecido ocorreu.");
+            showToast(error instanceof Error ? error.message : "Um erro desconhecido ocorreu.", 'error');
         } finally {
             setIsProcessing(false);
         }
@@ -334,7 +490,7 @@ export const CompositionsView: React.FC<{
             showToast(`Composição revisada com sucesso.`);
         } catch (error) {
             console.error(error);
-            showToast(error instanceof Error ? error.message : "Um erro desconhecido ocorreu na revisão.");
+            showToast(error instanceof Error ? error.message : "Um erro desconhecido ocorreu na revisão.", 'error');
             setComposicoesParaRevisao(prev => {
                  if (!prev) return null;
                 const newComps = [...prev];
@@ -348,7 +504,6 @@ export const CompositionsView: React.FC<{
         if (!composicoesParaRevisao) return;
 
         const novasComposicoes: Composicao[] = composicoesParaRevisao.map(comp => {
-            // Find the max sequence for the current group/subgroup combination
             const maxSeq = composicoes
                 .filter(c => c.grupo === comp.reviewState.grupo && c.subgrupo === comp.reviewState.subgrupo)
                 .map(c => parseInt(c.codigo.split('-')[2], 10))
@@ -404,8 +559,9 @@ export const CompositionsView: React.FC<{
                             <textarea
                                 value={compositionText}
                                 onChange={(e) => setCompositionText(e.target.value)}
-                                rows={12}
-                                className="w-full p-2 border rounded-md font-mono text-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
+                                onInput={handleTextareaInput}
+                                style={{ minHeight: '300px' }}
+                                className="w-full p-2 border rounded-md font-mono text-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 resize-none overflow-hidden"
                                 placeholder="Cole o texto das composições aqui..."
                             />
                             <div className="mt-4 text-right">
@@ -445,26 +601,50 @@ export const CompositionsView: React.FC<{
                                 <input 
                                     type="text" 
                                     placeholder="Buscar por nome ou código..." 
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-full p-2 pl-10 border rounded-md bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
                                 />
                             </div>
                         </div>
                         <div className="p-6">
-                            {composicoes.length > 0 ? (
+                            {filteredCompositions.length > 0 ? (
                                 <div className="space-y-4">
-                                    {composicoes.map(c => (
-                                        <CompositionSummaryCard key={c.id} composition={c} />
+                                    {filteredCompositions.map(c => (
+                                        <CompositionSummaryCard 
+                                            key={c.id} 
+                                            composition={c} 
+                                            onViewDetails={() => setCompositionToView(c)}
+                                            onDelete={() => setCompositionToDelete(c)}
+                                        />
                                     ))}
                                 </div>
                             ) : (
                                 <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-                                    Nenhuma composição no banco de dados. Use a aba "Importar" para adicionar.
+                                    {searchQuery ? `Nenhuma composição encontrada para "${searchQuery}".` : 'Nenhuma composição no banco de dados. Use a aba "Importar" para adicionar.'}
                                 </p>
                             )}
                         </div>
                     </div>
                 )}
             </div>
+            
+            <Modal isOpen={!!compositionToView} onClose={() => setCompositionToView(null)} title="Detalhes da Composição" size="xl">
+                {compositionToView && <FullCompositionDetailView composition={compositionToView} />}
+            </Modal>
+            
+            <Modal isOpen={!!compositionToDelete} onClose={() => setCompositionToDelete(null)} title="Confirmar Exclusão" size="md">
+                {compositionToDelete && (
+                    <div>
+                        <p className="dark:text-gray-300">Tem certeza que deseja apagar a composição "{compositionToDelete.titulo}"?</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Essa ação não pode ser desfeita.</p>
+                        <div className="flex justify-end space-x-2 mt-6">
+                            <Button variant="secondary" onClick={() => setCompositionToDelete(null)}>Cancelar</Button>
+                            <Button variant="danger" onClick={handleConfirmDelete}>Excluir</Button>
+                        </div>
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };

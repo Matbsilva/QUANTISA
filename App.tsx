@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -421,7 +422,12 @@ const MainHeader: React.FC<{children?: React.ReactNode}> = ({ children }) => {
 };
 
 // --- TOAST NOTIFICATION ---
-const Toast = ({ message, onDismiss }: { message: string; onDismiss: () => void }) => {
+type ToastType = 'success' | 'error';
+interface ToastProps {
+    toast: { message: string; type: ToastType };
+    onDismiss: () => void;
+}
+const Toast = ({ toast, onDismiss }: ToastProps) => {
     useEffect(() => {
         const timer = setTimeout(() => {
             onDismiss();
@@ -430,9 +436,14 @@ const Toast = ({ message, onDismiss }: { message: string; onDismiss: () => void 
         return () => clearTimeout(timer);
     }, [onDismiss]);
 
+    const typeClasses = {
+        success: 'bg-green-500',
+        error: 'bg-danger',
+    };
+
     return (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg z-[9999] animate-fade-in-down">
-            {message}
+        <div className={`fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${typeClasses[toast.type]} text-white py-2 px-4 rounded-lg shadow-lg z-[9999] animate-fade-in-down`}>
+            {toast.message}
         </div>
     );
 };
@@ -451,7 +462,7 @@ const App: React.FC = () => {
     const [isAddReturnModalOpen, setIsAddReturnModalOpen] = useState(false);
     const [projectForReturn, setProjectForReturn] = useState<Project | null>(null);
     const [analysisForNewProject, setAnalysisForNewProject] = useState<ParsedAnalysis | null>(null);
-    const [toastMessage, setToastMessage] = useState<string>('');
+    const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
     const [workspaceInitialStep, setWorkspaceInitialStep] = useState(0);
 
     useEffect(() => {
@@ -460,6 +471,9 @@ const App: React.FC = () => {
         setComposicoes(mockComposicoes);
     }, []);
 
+    const showToast = (message: string, type: ToastType = 'success') => {
+        setToast({ message, type });
+    };
 
     const handleSelectProject = (project: Project) => {
         setSelectedProject(project);
@@ -608,9 +622,9 @@ const App: React.FC = () => {
             case 'analysis':
                 return <AnalysisView onAdvance={handleAdvanceFromAnalysis} />;
             case 'datamaster':
-                return <DataMasterView insumos={insumos} />;
+                return <DataMasterView insumos={insumos} setInsumos={setInsumos} showToast={showToast} />;
             case 'composicoes':
-                return <CompositionsView composicoes={composicoes} setComposicoes={setComposicoes} showToast={setToastMessage} />;
+                return <CompositionsView composicoes={composicoes} setComposicoes={setComposicoes} showToast={showToast} />;
             case 'settings':
                 return <SettingsView insumos={insumos} setInsumos={setInsumos} />;
             default:
@@ -623,7 +637,7 @@ const App: React.FC = () => {
             case 'project-details':
                 return selectedProject ? <ProjectDetailView project={selectedProject} onBack={handleBackToDashboard} onDelete={() => handleDeleteProject(selectedProject.id)} onGoToWorkspace={() => handleGoToWorkspace(selectedProject)} onAddReturn={handleAddReturn} /> : null;
             case 'workspace':
-                return selectedProject ? <WorkspaceView project={selectedProject} onBack={handleBackToDetails} updateProject={handleUpdateProject} showToast={setToastMessage} initialStep={workspaceInitialStep} /> : null;
+                return selectedProject ? <WorkspaceView project={selectedProject} onBack={handleBackToDetails} updateProject={handleUpdateProject} showToast={showToast} initialStep={workspaceInitialStep} /> : null;
             case 'page':
             default:
                 return renderPageContent();
@@ -632,7 +646,7 @@ const App: React.FC = () => {
 
     return (
         <div className="flex h-screen font-sans text-gray-900 bg-light-bg dark:bg-gray-900">
-            {toastMessage && <Toast message={toastMessage} onDismiss={() => setToastMessage('')} />}
+            {toast && <Toast toast={toast} onDismiss={() => setToast(null)} />}
             <Sidebar onNewProject={handleNewProject} activePage={activePage} onNavigate={handleNavigate} />
             <main className="flex-1 flex flex-col overflow-hidden">
                 <MainHeader>
@@ -681,7 +695,7 @@ const App: React.FC = () => {
             </Modal>
 
             <ChatBot />
-            <AudioTranscriber onCopy={(message) => setToastMessage(message)} />
+            <AudioTranscriber onCopy={(message) => showToast(message)} />
         </div>
     );
 };
