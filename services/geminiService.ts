@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, GenerateContentResponse, Blob, Modality, type LiveServerMessage } from "@google/genai";
 import type { Message, SearchResult, Service, Doubt, RefinementSuggestion, ValueEngineeringAnalysis, InternalQuery, ApprovalStatus, Composicao, Insumo } from '../types';
 
@@ -1044,7 +1045,7 @@ export const findSimilarInsumosInBatch = async (newInsumos: Partial<Insumo>[], e
     const existingInsumosForPrompt = existingInsumos.map(i => ({ id: i.id, nome: i.nome }));
 
     const prompt = `
-// PROMPT MESTRE V2.3 - Comparação em Lote (com Trava de Segurança)
+// PROMPT MESTRE V2.4.1 - Comparação em Lote (com Penalização Severa)
 **1.0 PERSONA E OBJETIVO ESTRATÉGICO**
 
 Você atuará com uma persona híbrida e de alta especialização: um **Engenheiro Civil Sênior com "Visão de Dono"** que também é um **Analista de Dados Sênior**, focado em saneamento e normalização de bancos de dados. Seus princípios são:
@@ -1061,48 +1062,14 @@ Você receberá um objeto JSON contendo duas chaves: \`newInsumos\` e \`existing
 
 **3.0 REGRAS DE ANÁLISE (Combinando Visão de Engenharia e Análise de Dados)**
 
-*   **3.1. Pré-Filtro Semântico (NOVA REGRA - TRAVA DE SEGURANÇA):** Antes de realizar uma comparação detalhada entre dois nomes, verifique se eles compartilham pelo menos uma palavra-chave principal (substantivo, código técnico, etc.), excluindo preposições, artigos e unidades de medida genéricas. Se não houver uma sobreposição clara de palavras-chave do produto principal, considere a similaridade como 0 e não prossiga com a análise. **Exemplo: NÃO compare "Areia Média (Saco 20kg)" com "Cimento (50 kg)", pois as palavras-chave principais "Areia" e "Cimento" são diferentes.**
+*   **3.1. Pré-Filtro Semântico (TRAVA DE SEGURANÇA):** Antes de realizar uma comparação detalhada entre dois nomes, verifique se eles compartilham pelo menos uma palavra-chave principal (substantivo, código técnico, etc.), excluindo preposições, artigos e unidades de medida genéricas. Se não houver uma sobreposição clara de palavras-chave do produto principal, considere a similaridade como 0 e não prossiga com a análise. **Exemplo: NÃO compare "Areia Média (Saco 20kg)" com "Cimento (50 kg)", pois as palavras-chave principais "Areia" e "Cimento" são diferentes.**
 *   **3.2. Foco no Significado, Não na Sintaxe (Visão do Analista):** Ignore diferenças de maiúsculas/minúsculas, acentuação, caracteres especiais (parênteses, hífens) e a ordem das palavras descritivas.
 *   **3.3. Equivalência de Unidades (Visão do Analista):** Trate sinônimos e abreviações de unidades como idênticos (ex: 'kg'='quilo', 'L'='Litro', 'm'='metro').
 *   **3.4. Equivalência de Especificações Técnicas (Visão do Engenheiro):** Reconheça e trate sinônimos técnicos comuns na construção civil como idênticos. **Exemplos críticos: '10mm' = '3/8"', '12.5mm' = '1/2"', '100mm' = 'DN100'**.
 *   **3.5. Comparação Crítica de Quantidade/Volume (Visão do Engenheiro):** A especificação de quantidade é crucial. "Saco 50kg" e "(50 kg)" são idênticos. No entanto, "Lata 18L" vs "Galão 3.6L" são **produtos de compra diferentes**.
-*   **3.6. Penalização por Diferenças-Chave (Visão do Engenheiro):** Atributos que **conflitam diretamente** (ex: "Cabo 2,5mm" vs "Cabo 4,0mm", "CPII" vs "CPV") devem impedir a correspondência. A ausência de um detalhe em um dos nomes (ex: "Cimento (Saco 50kg)" vs "Cimento CPII (Saco 50kg)") deve reduzir o score, mas ainda pode ser considerado similar se o restante do nome for idêntico.
+*   **3.6. Ponderação de Conflitos Técnicos (NOVA VERSÃO REFINADA - Visão do Engenheiro):** Esta é a regra mais importante para a precisão do score. Se dois insumos possuem uma especificação técnica crucial (bitola, dimensão, tipo, etc.) que **conflita diretamente** (ex: \`2,5mm²\` vs. \`4,0mm²\`; \`CPII\` vs. \`CPV\`), você deve aplicar uma **penalização severa ao score final**. O score não deve ser zerado, mas deve ser significativamente reduzido para refletir que, embora o produto base seja similar, eles não são intercambiáveis. Um score final para esses casos deveria ficar, idealmente, **entre 60 e 80**, sinalizando alta similaridade contextual mas uma diferença crítica que impede a fusão automática.
 
-**4.0 EXEMPLO DE EXECUÇÃO**
-*   **Entrada:**
-    \`\`\`json
-    {
-      "newInsumos": [
-        { "id": "temp-1", "nome": "Cimento Saco de 50kg" },
-        { "id": "temp-2", "nome": "Tubo PVC Esgoto 100mm" },
-        { "id": "temp-3", "nome": "Areia Média Lavada (m³)" }
-      ],
-      "existingInsumos": [
-        { "id": "db-101", "nome": "Cimento (Saco 50kg)" },
-        { "id": "db-102", "nome": "Brita 0 (m³)" },
-        { "id": "db-103", "nome": "Tubo PVC p/ Esgoto DN100" }
-      ]
-    }
-    \`\`\`
-*   **Saída Esperada:**
-    \`\`\`json
-    [
-      {
-        "newInsumoId": "temp-1",
-        "existingInsumoId": "db-101",
-        "similarityScore": 100,
-        "reasoning": "Itens idênticos (cimento 50kg) com formatação diferente."
-      },
-      {
-        "newInsumoId": "temp-2",
-        "existingInsumoId": "db-103",
-        "similarityScore": 98,
-        "reasoning": "Mesmo produto (tubo PVC 100mm) com sinônimos técnicos (100mm vs DN100)."
-      }
-    ]
-    \`\`\`
-
-**5.0 ESTRUTURA DE DADOS ALVO (JSON de Saída OBRIGATÓRIO)**
+**4.0 ESTRUTURA DE DADOS ALVO E SAÍDA**
 Retorne APENAS o array de objetos JSON. Se nenhum par similar for encontrado, retorne um array vazio \`[]\`.
 `;
     
