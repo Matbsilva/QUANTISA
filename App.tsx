@@ -23,11 +23,40 @@ type CurrentView = 'page' | 'workspace' | 'project-details';
 
 // --- INTERACTIVE TEST PLAN ---
 const TestPlan = () => {
-    const tests = [
-        { id: 1, text: "Navegue para o Dashboard e verifique se este componente de teste está visível." },
-        { id: 2, text: "Teste Crítico: Avance até a Etapa 2 de um projeto e verifique se a tabela de Engenharia de Valor é preenchida." },
-        { id: 3, text: "No final da Etapa 2, verifique se o modal de 'verba' aparece, se os campos são editáveis e se o campo de instrução extra existe." },
+    interface TestItem {
+        id: number;
+        text: string;
+        subTests?: TestItem[];
+    }
+
+    const testData: TestItem[] = [
+        { 
+            id: 1, text: "Testar Tela de Verificação de Similaridade (UI/UX Corrigido):",
+            subTests: [
+                { id: 11, text: 'Vá para a aba "Composições" → "Importar".' },
+                { id: 12, text: 'Cole uma ou mais composições e clique em "Processar e Verificar Similaridade".' },
+                { id: 13, text: 'Verificar Contraste do Candidato: Confirme que o card de cada "Candidato Similar" agora tem um fundo cinza mais escuro (bg-slate-100), destacando-se visualmente do card branco da "Nova composição".' },
+                { id: 14, text: 'Verificar Escopo Completo: Confirme que o campo "Escopo:" agora exibe o texto completo, sem resumos. O texto deve quebrar a linha corretamente.' },
+                { 
+                    id: 15, text: "Verificar Legibilidade e Hierarquia:",
+                    subTests: [
+                        { id: 151, text: "O título do candidato deve estar maior (text-lg)." },
+                        { id: 152, text: "O texto do escopo deve estar maior (text-sm) e com cor de alto contraste (text-gray-700)." },
+                        { id: 153, text: "O texto do score e motivo deve estar em text-sm e com cor de alto contraste (text-gray-700)." }
+                    ]
+                }
+            ]
+        },
+        { 
+            id: 2, text: "Testar Modal de Detalhes (Contraste Corrigido):",
+            subTests: [
+                { id: 21, text: 'Navegue para a aba "Pesquisar".' },
+                { id: 22, text: 'Clique em qualquer composição para abrir o modal de detalhes.' },
+                { id: 23, text: 'Verificar Botão "Copiar": Confirme que o botão "Copiar Composição (Markdown)" agora tem um texto azul escuro (text-blue-800) sobre um fundo azul claro (bg-blue-100 / dark:bg-blue-200), garantindo excelente legibilidade em ambos os temas, claro e escuro.' }
+            ]
+        }
     ];
+
     const [completedTests, setCompletedTests] = useState<Set<number>>(new Set());
 
     const toggleTest = (id: number) => {
@@ -42,17 +71,34 @@ const TestPlan = () => {
         });
     };
 
+    const TestList: React.FC<{ items: TestItem[], level?: number }> = ({ items, level = 0 }) => (
+        <ul className={`list-inside space-y-1 ${level > 0 ? 'pl-6' : ''}`}>
+            {items.map(test => (
+                <li key={test.id}>
+                    <label className="flex items-start cursor-pointer group">
+                        <input
+                            type="checkbox"
+                            checked={completedTests.has(test.id)}
+                            onChange={() => toggleTest(test.id)}
+                            className="mr-3 mt-1 flex-shrink-0 form-checkbox h-4 w-4 text-yellow-600 rounded border-gray-400 focus:ring-yellow-500"
+                        />
+                        <span className={`${completedTests.has(test.id) ? 'line-through text-gray-500' : ''} ${test.subTests ? 'font-semibold' : ''}`}>{test.text}</span>
+                    </label>
+                    {test.subTests && (
+                         <div className="pt-1">
+                            <TestList items={test.subTests} level={level + 1} />
+                        </div>
+                    )}
+                </li>
+            ))}
+        </ul>
+    );
+
     return (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4 rounded-md shadow-lg dark:bg-yellow-900/30 dark:text-yellow-200 dark:border-yellow-600">
-            <h3 className="font-bold">Plano de Testes para Validação</h3>
-            <ul className="mt-2 list-inside space-y-1">
-                {tests.map(test => (
-                    <li key={test.id} onClick={() => toggleTest(test.id)} className="cursor-pointer group">
-                        <span className="mr-2">{completedTests.has(test.id) ? '✅' : '[]'}</span>
-                        <span className={completedTests.has(test.id) ? 'line-through text-gray-500' : ''}>{test.text}</span>
-                    </li>
-                ))}
-            </ul>
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 mb-4 rounded-md shadow-lg dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-600">
+            <h3 className="font-bold text-lg">Plano de Testes para Validação (V2.0)</h3>
+            <p className="text-sm mt-1 mb-3">Para garantir que as novas melhorias visuais e funcionais estão corretas, por favor, siga este checklist:</p>
+            <TestList items={testData} />
         </div>
     );
 };

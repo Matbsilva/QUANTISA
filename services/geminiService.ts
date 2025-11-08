@@ -300,7 +300,7 @@ Você atuará com uma persona híbrida e de alta especialização: um **Engenhei
 Seu objetivo final é ser a principal linha de defesa contra a poluição de dados em um sistema de orçamentação, garantindo que a base de composições seja íntegra, confiável e livre de duplicatas.
 
 **2.0 TAREFA**
-Você receberá um lote de "Novas Composições" e uma lista de "Composições Existentes". Para CADA nova composição, sua tarefa é encontrar as 5 composições existentes mais relevantes, ordená-las por relevância, e retornar os resultados em uma estrutura JSON consolidada. Para cada candidato, você deve incluir um resumo do seu escopo com cerca de 150 caracteres.
+Você receberá um lote de "Novas Composições" e uma lista de "Composições Existentes". Para CADA nova composição, sua tarefa é encontrar as 5 composições existentes mais relevantes, ordená-las por relevância, e retornar os resultados em uma estrutura JSON consolidada. Para cada candidato, você deve incluir o texto COMPLETO do seu campo de escopo.
 
 **3.0 DADOS DE ENTRADA (Exemplo de formato que você receberá)**
 \`\`\`json
@@ -310,7 +310,7 @@ Você receberá um lote de "Novas Composições" e uma lista de "Composições E
     { "id": "temp-2", "titulo": "Demolição de parede de alvenaria" }
   ],
   "existingCompositions": [
-    { "id": "db-101", "titulo": "Execução de Contrapiso (e=4cm) sobre Enchimento", "escopo": "Execução de contrapiso com argamassa industrializada para nivelamento de base, com espessura final de 4cm, sobre camada de enchimento leve existente." },
+    { "id": "db-101", "titulo": "Execução de Contrapiso (e=4cm) sobre Enchimento", "escopo": "Execução de contrapiso com argamassa industrializada para nivelamento de base, com espessura final de 4cm, sobre camada de enchimento leve existente. Não inclui a preparação da base." },
     { "id": "db-102", "titulo": "Enchimento Leve de Piso - EPS 10cm + Contrapiso 5cm", "escopo": "Sistema completo de regularização de piso, incluindo camada de 10cm de EPS e posterior contrapiso de 5cm de espessura." },
     { "id": "db-103", "titulo": "Demolição Manual de Alvenaria de Tijolos", "escopo": "Demolição manual de paredes de alvenaria de vedação com tijolos cerâmicos, sem aproveitamento. Inclui a remoção do material para área de descarte." }
   ]
@@ -333,7 +333,7 @@ Retorne um objeto JSON contendo uma chave "resultados" que é um array de objeto
     {
       "idNovaComposicao": "temp-1",
       "candidatos": [
-        { "idExistente": "db-101", "titulo": "Execução de Contrapiso (e=4cm) sobre Enchimento", "escopoResumido": "Execução de contrapiso com argamassa industrializada para nivelamento de base, com espessura final de 4cm, sobre camada de enchimento leve existente.", "relevanciaScore": 98, "motivo": "Mesmo serviço e espessura (4cm)." },
+        { "idExistente": "db-101", "titulo": "Execução de Contrapiso (e=4cm) sobre Enchimento", "escopoResumido": "Execução de contrapiso com argamassa industrializada para nivelamento de base, com espessura final de 4cm, sobre camada de enchimento leve existente. Não inclui a preparação da base.", "relevanciaScore": 98, "motivo": "Mesmo serviço e espessura (4cm)." },
         { "idExistente": "db-102", "titulo": "Enchimento Leve de Piso - EPS 10cm + Contrapiso 5cm", "escopoResumido": "Sistema completo de regularização de piso, incluindo camada de 10cm de EPS e posterior contrapiso de 5cm de espessura.", "relevanciaScore": 75, "motivo": "Serviço relacionado, mas com espessura (5cm vs 4cm) e método diferentes." }
       ]
     },
@@ -373,7 +373,7 @@ Retorne um objeto JSON contendo uma chave "resultados" que é um array de objeto
                 ...res,
                 candidatos: res.candidatos.map((cand: any) => ({
                     ...cand,
-                    escopoResumido: cand.escopoResumido || "Não foi possível resumir o escopo."
+                    escopoResumido: cand.escopoResumido || "Não foi possível extrair o escopo."
                 }))
             }));
         }

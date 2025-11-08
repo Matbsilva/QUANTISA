@@ -55,9 +55,9 @@ const FullCompositionDetailView: React.FC<{ composition: Composicao, onCopyToCli
                 </div>
                  <Button
                     onClick={onCopyToClipboard}
-                    className="!bg-blue-100 dark:!bg-blue-900/30 !text-blue-700 dark:!text-blue-300 hover:!bg-blue-200 dark:hover:!bg-blue-900/50 font-semibold !px-3 !py-1.5 !rounded-md !text-sm !shadow-none"
+                    className="!bg-blue-100 dark:!bg-blue-200 !text-slate-900 dark:!text-slate-900 hover:!bg-blue-200 dark:hover:!bg-blue-300 font-semibold !px-2 !py-1.5 !rounded-md !text-base !shadow-none gap-2"
                 >
-                    <ClipboardIcon className="w-5 h-5 mr-2" />
+                    <ClipboardIcon className="w-5 h-5" />
                     Copiar Composição (Markdown)
                 </Button>
             </div>
@@ -412,7 +412,7 @@ const SimilarityCheckView: React.FC<{
             <h2 className="text-xl font-semibold mb-2 text-gray-800 dark:text-gray-200">Verificação de Similaridade</h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">A IA analisou suas composições e encontrou algumas similares já existentes. Decida para cada item se deseja adicioná-lo como novo ou descartá-lo.</p>
 
-            <div className="space-y-8">
+            <div className="space-y-3">
                 {parsedCompositions.map(comp => {
                     const result = relevanceResults.find(r => r.idNovaComposicao === comp.id);
                     return (
@@ -431,14 +431,14 @@ const SimilarityCheckView: React.FC<{
                                 <div className="mt-4 pl-4 border-l-2 border-gray-200 dark:border-gray-600">
                                     <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Candidatos Similares Encontrados:</h4>
                                     {result && result.candidatos.length > 0 ? (
-                                        <ul className="mt-2 space-y-2">
+                                        <ul className="mt-2 space-y-3">
                                             {result.candidatos.map(cand => (
-                                                <li key={cand.idExistente} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md text-sm">
-                                                    <p className="font-semibold text-gray-900 dark:text-gray-100">{cand.titulo}</p>
-                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
+                                                <li key={cand.idExistente} className="p-3 bg-slate-100 dark:bg-slate-700 rounded-md">
+                                                    <p className="font-bold text-slate-900 dark:text-slate-50 text-lg">{cand.titulo}</p>
+                                                    <p className="italic text-sm text-slate-500 dark:text-slate-400 mt-1 whitespace-pre-wrap">
                                                         <strong>Escopo:</strong> {cand.escopoResumido}
                                                     </p>
-                                                    <p className="text-gray-600 dark:text-gray-400 mt-1"><span className="font-bold">{cand.relevanciaScore}%</span> - {cand.motivo}</p>
+                                                    <p className="text-sm text-green-700 dark:text-green-500 mt-2"><span className="font-bold">{cand.relevanciaScore}%</span> - {cand.motivo}</p>
                                                 </li>
                                             ))}
                                         </ul>
