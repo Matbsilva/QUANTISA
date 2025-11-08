@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Composicao, ComposicaoInsumo, ComposicaoMaoDeObra } from '../types';
-import { Button, SearchIcon, Spinner, Modal, TrashIcon } from './Shared';
-import { parseCompositions, reviseParsedComposition, ParsedComposicao } from '../services/geminiService';
+import { Button, SearchIcon, Spinner, Modal, TrashIcon, ClipboardIcon } from './Shared';
+import { parseCompositions, reviseParsedComposition, type ParsedComposicao, findRelevantCompositionsInBatch, type BatchRelevanceResult, exportCompositionToMarkdown } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -16,7 +16,7 @@ type ReviewableComposicao = ParsedComposicao & {
 };
 
 // --- Full, Read-Only Detail Display for Modal View ---
-const FullCompositionDetailView: React.FC<{ composition: Composicao }> = ({ composition }) => {
+const FullCompositionDetailView: React.FC<{ composition: Composicao, onCopyToClipboard: () => void }> = ({ composition, onCopyToClipboard }) => {
     
     const Section = ({ title, children, noTextColor = false }: { title: string, children?: React.ReactNode, noTextColor?: boolean }) => (
         <div className="py-4">
@@ -43,14 +43,23 @@ const FullCompositionDetailView: React.FC<{ composition: Composicao }> = ({ comp
     return (
         <div className="p-2 text-base font-sans">
             {/* Header */}
-            <div>
-                <p className="font-bold text-xl text-primary">{composition.codigo} - {composition.titulo}</p>
-                <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-gray-400 mt-2">
-                    <span><strong>Unidade:</strong> {composition.unidade}</span>
-                    <span><strong>Qtd. Ref:</strong> {composition.quantidadeReferencia}</span>
-                    <span><strong>Grupo:</strong> {composition.grupo}</span>
-                    <span><strong>Subgrupo:</strong> {composition.subgrupo}</span>
+            <div className="flex justify-between items-start">
+                 <div>
+                    <p className="font-bold text-xl text-primary">{composition.codigo} - {composition.titulo}</p>
+                    <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-600 dark:text-gray-400 mt-2">
+                        <span><strong>Unidade:</strong> {composition.unidade}</span>
+                        <span><strong>Qtd. Ref:</strong> {composition.quantidadeReferencia}</span>
+                        <span><strong>Grupo:</strong> {composition.grupo}</span>
+                        <span><strong>Subgrupo:</strong> {composition.subgrupo}</span>
+                    </div>
                 </div>
+                 <Button
+                    onClick={onCopyToClipboard}
+                    className="!bg-blue-100 dark:!bg-blue-900/30 !text-blue-700 dark:!text-blue-300 hover:!bg-blue-200 dark:hover:!bg-blue-900/50 font-semibold !px-3 !py-1.5 !rounded-md !text-sm !shadow-none"
+                >
+                    <ClipboardIcon className="w-5 h-5 mr-2" />
+                    Copiar Composição (Markdown)
+                </Button>
             </div>
             
             {/* Sections */}
@@ -331,7 +340,7 @@ const CompositionSummaryCard: React.FC<{
                     </div>
                     <button 
                         onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                        className="text-gray-400 hover:text-danger p-1 rounded-full"
+                        className="text-red-500 hover:text-red-700 dark:text-red-500 dark:hover:text-red-400 p-1 rounded-full"
                         aria-label={`Excluir composição ${composition.titulo}`}
                     >
                         <TrashIcon className="w-5 h-5" />
@@ -376,6 +385,81 @@ const CompositionSummaryCard: React.FC<{
     );
 };
 
+type ImportStage = 'input' | 'similarity_check' | 'review_and_confirm';
+
+// --- NEW Similarity Check View ---
+const SimilarityCheckView: React.FC<{
+    parsedCompositions: (ParsedComposicao & { id: string })[];
+    relevanceResults: BatchRelevanceResult[];
+    onProceed: (compositionsToReview: ParsedComposicao[]) => void;
+    onCancel: () => void;
+}> = ({ parsedCompositions, relevanceResults, onProceed, onCancel }) => {
+    const [decisions, setDecisions] = useState<Record<string, 'add' | 'discard'>>(() =>
+        Object.fromEntries(parsedCompositions.map(c => [c.id, 'add']))
+    );
+
+    const handleDecisionChange = (id: string, decision: 'add' | 'discard') => {
+        setDecisions(prev => ({ ...prev, [id]: decision }));
+    };
+
+    const handleProceed = () => {
+        const toReview = parsedCompositions.filter(c => decisions[c.id] === 'add');
+        onProceed(toReview);
+    };
+
+    return (
+        <div>
+            <h2 className="text-xl font-semibold mb-2 text-gray-800 dark:text-gray-200">Verificação de Similaridade</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">A IA analisou suas composições e encontrou algumas similares já existentes. Decida para cada item se deseja adicioná-lo como novo ou descartá-lo.</p>
+
+            <div className="space-y-8">
+                {parsedCompositions.map(comp => {
+                    const result = relevanceResults.find(r => r.idNovaComposicao === comp.id);
+                    return (
+                        <div key={comp.id} className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-6">
+                            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 border border-gray-200 dark:border-gray-700">
+                                <div className="flex justify-between items-start gap-4">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-gray-800 dark:text-gray-200">Nova Composição: <span className="text-primary">{comp.titulo}</span></h3>
+                                    </div>
+                                    <div className="flex-shrink-0 flex items-center gap-4">
+                                        <label className="flex items-center gap-2 text-sm"><input type="radio" name={`decision-${comp.id}`} checked={decisions[comp.id] === 'add'} onChange={() => handleDecisionChange(comp.id, 'add')} className="text-primary focus:ring-primary" />Adicionar</label>
+                                        <label className="flex items-center gap-2 text-sm"><input type="radio" name={`decision-${comp.id}`} checked={decisions[comp.id] === 'discard'} onChange={() => handleDecisionChange(comp.id, 'discard')} className="text-primary focus:ring-primary" />Descartar</label>
+                                    </div>
+                                </div>
+
+                                <div className="mt-4 pl-4 border-l-2 border-gray-200 dark:border-gray-600">
+                                    <h4 className="font-semibold text-sm text-gray-700 dark:text-gray-300">Candidatos Similares Encontrados:</h4>
+                                    {result && result.candidatos.length > 0 ? (
+                                        <ul className="mt-2 space-y-2">
+                                            {result.candidatos.map(cand => (
+                                                <li key={cand.idExistente} className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md text-sm">
+                                                    <p className="font-semibold text-gray-900 dark:text-gray-100">{cand.titulo}</p>
+                                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 italic">
+                                                        <strong>Escopo:</strong> {cand.escopoResumido}
+                                                    </p>
+                                                    <p className="text-gray-600 dark:text-gray-400 mt-1"><span className="font-bold">{cand.relevanciaScore}%</span> - {cand.motivo}</p>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Nenhuma composição similar encontrada.</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <div className="mt-8 flex justify-end items-center gap-4">
+                <Button variant="secondary" onClick={onCancel}>Cancelar Importação</Button>
+                <Button size="lg" onClick={handleProceed}>Prosseguir para Revisão</Button>
+            </div>
+        </div>
+    );
+};
+
 
 export const CompositionsView: React.FC<{
     composicoes: Composicao[];
@@ -385,6 +469,9 @@ export const CompositionsView: React.FC<{
     const [activeTab, setActiveTab] = useState<'importar' | 'pesquisar'>('importar');
     const [compositionText, setCompositionText] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const [importStage, setImportStage] = useState<ImportStage>('input');
+    const [parsedCompositions, setParsedCompositions] = useState<(ParsedComposicao & { id: string })[]>([]);
+    const [relevanceResults, setRelevanceResults] = useState<BatchRelevanceResult[]>([]);
     const [composicoesParaRevisao, setComposicoesParaRevisao] = useState<ReviewableComposicao[] | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [compositionToDelete, setCompositionToDelete] = useState<Composicao | null>(null);
@@ -397,6 +484,12 @@ export const CompositionsView: React.FC<{
             c.codigo.toLowerCase().includes(searchQuery.toLowerCase())
         );
     }, [composicoes, searchQuery]);
+    
+    const handleCopyToClipboard = (composition: Composicao) => {
+        const markdown = exportCompositionToMarkdown(composition);
+        navigator.clipboard.writeText(markdown);
+        showToast("Composição copiada para a área de transferência!");
+    };
 
     const handleConfirmDelete = () => {
         if (!compositionToDelete) return;
@@ -410,6 +503,15 @@ export const CompositionsView: React.FC<{
         textarea.style.height = 'auto'; // Reset height to recalculate
         textarea.style.height = `${textarea.scrollHeight}px`;
     };
+    
+    const resetImportFlow = () => {
+        setImportStage('input');
+        setCompositionText('');
+        setParsedCompositions([]);
+        setRelevanceResults([]);
+        setComposicoesParaRevisao(null);
+    };
+
 
     const handleProcessar = async () => {
         if (!compositionText.trim()) {
@@ -427,26 +529,18 @@ export const CompositionsView: React.FC<{
 
             if (isInvalidInputAlert) {
                 showToast(parsed[0].analiseEngenheiro!.notaDaImportacao!, 'error');
+                setIsProcessing(false);
                 return;
             }
 
-            const reviewable = parsed.map(p => {
-                const suggestedGrupo = p.grupo || 'GERAL'; 
-                const suggestedSubgrupo = p.subgrupo || 'GERAL'; 
+            const parsedWithIds = parsed.map((p, i) => ({ ...p, id: `temp-${i}` }));
+            setParsedCompositions(parsedWithIds);
+            
+            const relevance = await findRelevantCompositionsInBatch(parsedWithIds, composicoes);
+            setRelevanceResults(relevance);
+            
+            setImportStage('similarity_check');
 
-                return {
-                    ...p,
-                    reviewState: { 
-                        isRevising: false, 
-                        instruction: '',
-                        grupo: suggestedGrupo,
-                        subgrupo: suggestedSubgrupo,
-                    }
-                }
-            });
-
-            setComposicoesParaRevisao(reviewable);
-            showToast(`${parsed.length} composição(ões) processada(s) com sucesso. Por favor, revise abaixo.`);
         } catch (error) {
             console.error(error);
             showToast(error instanceof Error ? error.message : "Um erro desconhecido ocorreu.", 'error');
@@ -455,6 +549,31 @@ export const CompositionsView: React.FC<{
         }
     };
     
+    const handleProceedToReview = (compositionsToReview: ParsedComposicao[]) => {
+         const reviewable = compositionsToReview.map(p => {
+            const suggestedGrupo = p.grupo || 'GERAL';
+            const suggestedSubgrupo = p.subgrupo || 'GERAL';
+
+            return {
+                ...p,
+                reviewState: {
+                    isRevising: false,
+                    instruction: '',
+                    grupo: suggestedGrupo,
+                    subgrupo: suggestedSubgrupo,
+                }
+            }
+        });
+
+        if (reviewable.length > 0) {
+            setComposicoesParaRevisao(reviewable);
+            setImportStage('review_and_confirm');
+        } else {
+            showToast("Nenhuma nova composição para adicionar.", 'success');
+            resetImportFlow();
+        }
+    };
+
     const handleFieldChange = (index: number, field: 'instruction' | 'grupo' | 'subgrupo', value: string) => {
         setComposicoesParaRevisao(prev => {
             if (!prev) return null;
@@ -527,8 +646,7 @@ export const CompositionsView: React.FC<{
         setComposicoes(prev => [...prev, ...novasComposicoes]);
         showToast(`${novasComposicoes.length} nova(s) composição(ões) salva(s) com sucesso!`);
         
-        setComposicoesParaRevisao(null);
-        setCompositionText('');
+        resetImportFlow();
         setActiveTab('pesquisar');
     };
 
@@ -540,6 +658,61 @@ export const CompositionsView: React.FC<{
             {label}
         </button>
     );
+
+    const renderImportContent = () => {
+        switch (importStage) {
+            case 'input':
+                return (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+                        <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">Importar Novas Composições</h2>
+                        <textarea
+                            value={compositionText}
+                            onChange={(e) => setCompositionText(e.target.value)}
+                            onInput={handleTextareaInput}
+                            style={{ minHeight: '300px' }}
+                            className="w-full p-2 border rounded-md font-mono text-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 resize-none overflow-hidden"
+                            placeholder="Cole o texto das composições aqui..."
+                        />
+                        <div className="mt-4 text-right">
+                            <Button onClick={handleProcessar} isLoading={isProcessing}>
+                                {isProcessing ? 'Processando...' : 'Processar e Verificar Similaridade'}
+                            </Button>
+                        </div>
+                    </div>
+                );
+            case 'similarity_check':
+                 return (
+                    <SimilarityCheckView
+                        parsedCompositions={parsedCompositions}
+                        relevanceResults={relevanceResults}
+                        onProceed={handleProceedToReview}
+                        onCancel={resetImportFlow}
+                    />
+                 );
+            case 'review_and_confirm':
+                 return (
+                     <div>
+                        <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">Revisão e Confirmação</h2>
+                        {composicoesParaRevisao?.map((comp, index) => (
+                            <CompositionDetailDisplay
+                                key={index}
+                                composition={comp}
+                                index={index}
+                                onRequestRevision={handleRequestRevision}
+                                onFieldChange={handleFieldChange}
+                            />
+                        ))}
+                         <div className="mt-6 flex justify-between items-center">
+                            <Button variant="secondary" onClick={() => setImportStage('similarity_check')}>Voltar</Button>
+                            <Button size="lg" onClick={handleSalvar}>
+                                Salvar Composições Aprovadas
+                            </Button>
+                        </div>
+                    </div>
+                 )
+        }
+    }
+
 
     return (
         <div className="p-4 md:p-8 flex-1 overflow-y-auto text-base">
@@ -553,41 +726,14 @@ export const CompositionsView: React.FC<{
                 </div>
 
                 {activeTab === 'importar' && (
-                    !composicoesParaRevisao ? (
-                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                            <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">Importar Novas Composições</h2>
-                            <textarea
-                                value={compositionText}
-                                onChange={(e) => setCompositionText(e.target.value)}
-                                onInput={handleTextareaInput}
-                                style={{ minHeight: '300px' }}
-                                className="w-full p-2 border rounded-md font-mono text-sm bg-gray-50 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 resize-none overflow-hidden"
-                                placeholder="Cole o texto das composições aqui..."
-                            />
-                            <div className="mt-4 text-right">
-                                <Button onClick={handleProcessar} isLoading={isProcessing}>
-                                    {isProcessing ? 'Processando...' : 'Processar com IA'}
-                                </Button>
-                            </div>
+                    isProcessing ? (
+                         <div className="flex flex-col items-center justify-center text-center p-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                            <Spinner className="w-8 h-8 mb-4" />
+                            <h3 className="text-lg font-semibold dark:text-white">Analisando Composições...</h3>
+                            <p className="text-gray-600 dark:text-gray-400">Verificando similaridade com a base de dados. Isso pode levar alguns instantes.</p>
                         </div>
                     ) : (
-                        <div>
-                            <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">Revisão e Confirmação</h2>
-                            {composicoesParaRevisao.map((comp, index) => (
-                                <CompositionDetailDisplay
-                                    key={index}
-                                    composition={comp}
-                                    index={index}
-                                    onRequestRevision={handleRequestRevision}
-                                    onFieldChange={handleFieldChange}
-                                />
-                            ))}
-                             <div className="mt-6 text-center">
-                                <Button size="lg" onClick={handleSalvar}>
-                                    Salvar Composições Aprovadas
-                                </Button>
-                            </div>
-                        </div>
+                        renderImportContent()
                     )
                 )}
 
@@ -630,7 +776,7 @@ export const CompositionsView: React.FC<{
             </div>
             
             <Modal isOpen={!!compositionToView} onClose={() => setCompositionToView(null)} title="Detalhes da Composição" size="xl">
-                {compositionToView && <FullCompositionDetailView composition={compositionToView} />}
+                {compositionToView && <FullCompositionDetailView composition={compositionToView} onCopyToClipboard={() => handleCopyToClipboard(compositionToView)} />}
             </Modal>
             
             <Modal isOpen={!!compositionToDelete} onClose={() => setCompositionToDelete(null)} title="Confirmar Exclusão" size="md">
