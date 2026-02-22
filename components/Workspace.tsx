@@ -1,18 +1,21 @@
+
 "use client";
 
-import React from 'react';
-import type { Project, Service, InternalQueryApproval, ApprovalStatus, RefinementSuggestion, InternalQuery, ValueEngineeringAnalysis } from '../types';
-import { Button, TrashIcon, PlusIcon, ClipboardIcon, DownloadIcon, Spinner, ArrowLeftIcon, Modal } from './Shared';
+import React, { useEffect, useState, useCallback } from 'react';
+import type { Project, Service, InternalQueryApproval, ApprovalStatus, RefinementSuggestion, InternalQuery, ValueEngineeringAnalysis, CompositionMappingItem, Composicao, InsumoValidationItem, Insumo } from '../types';
+import { Button, TrashIcon, PlusIcon, ClipboardIcon, DownloadIcon, Spinner, ArrowLeftIcon, Modal, SearchIcon, Badge } from './Shared';
 import { KanbanStatus } from '../types';
-import { getDetailedScope, getRefinementSuggestions, getValueEngineeringAnalysis, processQueryResponses, refineScopeFromEdits } from '../services/geminiService';
+import { getDetailedScope, getRefinementSuggestions, getValueEngineeringAnalysis, processQueryResponses, refineScopeFromEdits, mapScopeToCompositions, generateInsumoValidationList } from '../services/geminiService';
+import { compositionService } from '../services/compositionService';
+import { mockInsumos } from '../services/mockData'; // Using mock data as the Data Master for now
 
 const STEPS = [
     { name: "Resumo", index: 0 },
     { name: "Escopo & Análise", index: 1 },
-    { name: "Escopo Detalhado", index: 2 },
-    { name: "Mapeamento de Composições", index: 3 },
-    { name: "Validação de Composições", index: 4 },
-    { name: "Validação & Custos", index: 5 },
+    { name: "Escopo Detalhado & EV", index: 2 },
+    { name: "Validação de Insumos", index: 3 }, // NEW STEP
+    { name: "Mapeamento de Composições", index: 4 },
+    { name: "Validação Final", index: 5 },
     { name: "Planejamento", index: 6 },
     { name: "Precificação & Docs", index: 7 },
 ];
@@ -117,7 +120,7 @@ const Quadrant = ({ title, children, className, actions }: { title: string, chil
 
 const RenderMarkdownBold = ({ text }: { text: string }) => {
     // Looks for a title in the format **Title:** at the beginning of the string
-    const match = text.match(/^\*\*(.*?)\*\*(.*)/s); // s flag for dot to match newline
+    const match = text.match(/^\*\*(.*?)\*\*((?:.|\n)*)/); // Alternative to s flag for dot to match newline
     if (match) {
         const title = match[1];
         const description = match[2];
@@ -335,7 +338,7 @@ const VerbaModal = ({ isOpen, items, onClose, onUpdate, onContinue }: {
         <Modal isOpen={isOpen} onClose={onClose} title="Itens com Quantidade Indefinida">
             <div className="space-y-4">
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                    Os seguintes itens estão marcados como 'verba' e não possuem uma quantidade real. Por favor, revise e atualize as quantidades e unidades para garantir a precisão do orçamento.
+                    Os seguintes itens estão marcados como &apos;verba&apos; e não possuem uma quantidade real. Por favor, revise e atualize as quantidades e unidades para garantir a precisão do orçamento.
                 </p>
                 <div className="border rounded-md max-h-64 overflow-y-auto dark:border-gray-600">
                     <table className="w-full text-sm">
@@ -486,9 +489,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
             
             // ETAPA 2: Buscar a Engenharia de Valor (Chamada Crítica - Agora Protegida)
             try {
-                console.log("--- DEBUG: Solicitando getValueEngineeringAnalysis ---");
                 veResult = await getValueEngineeringAnalysis(servicesParaAnalise);
-                console.log("--- DEBUG: getValueEngineeringAnalysis SUCESSO ---");
             } catch (veError) {
                 console.error("Erro CRÍTICO ao buscar Engenharia de Valor:", veError);
                 showToast("Erro ao gerar a Análise de Valor, mas outras definições foram salvas.", 'error');
@@ -496,9 +497,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
     
             // ETAPA 3: Buscar as Sugestões de Refinamento (Chamada Secundária - Agora Protegida)
             try {
-                console.log("--- DEBUG: Solicitando getRefinementSuggestions ---");
                 refinementResult = await getRefinementSuggestions(project.pendingDoubts || []); 
-                console.log("--- DEBUG: getRefinementSuggestions SUCESSO ---");
             } catch (refError) {
                 console.error("Erro CRÍTICO ao buscar Sugestões de Refinamento:", refError);
                 showToast("Erro ao buscar refinamento de dúvidas. Verifique o console (F12).", 'error');
@@ -827,7 +826,7 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
                            size="lg" 
                            disabled={!isRefinementApplied}
                        >
-                           Avançar para Mapeamento →
+                           Avançar para Validação de Insumos →
                        </Button>
                         <Button 
                            onClick={handleEnterEditMode}
@@ -844,45 +843,291 @@ const Step2DetailedScope = ({ project, onAdvance, updateProject, showToast }: { 
     );
 };
 
+// --- Step 3: Insumo Validation (NEW) ---
+const Step3InsumoValidation = ({ project, onComplete, updateProject, showToast }: { project: Project, onComplete: () => void, updateProject: (project: Project) => void, showToast: (message: string, type?: 'success' | 'error') => void }) => {
+    const [isValidating, setIsValidating] = useState(false);
+    const [validations, setValidations] = useState<InsumoValidationItem[]>(project.insumoValidations || []);
 
-// --- Step 3: Composition Mapping (Placeholder) ---
-const Step3Mapping = ({ project, onComplete }: { project: Project, onComplete: () => void }) => {
+    const handleStartValidation = useCallback(async () => {
+        setIsValidating(true);
+        try {
+            // Using mockInsumos as the "Existing Database". In real app, this comes from Supabase.
+            const existingDb = mockInsumos; 
+            const results = await generateInsumoValidationList(project.detailedServices || [], existingDb);
+            setValidations(results);
+            updateProject({ ...project, insumoValidations: results });
+        } catch (e) {
+            console.error(e);
+            showToast("Erro ao validar insumos.", 'error');
+        } finally {
+            setIsValidating(false);
+        }
+    }, [project, updateProject, showToast]);
+
+    useEffect(() => {
+        // Auto-start validation if empty
+        if ((!project.insumoValidations || project.insumoValidations.length === 0) && project.detailedServices) {
+            handleStartValidation();
+        }
+    }, [project.insumoValidations, project.detailedServices, handleStartValidation]);
+
+    const handlePriceChange = (id: string, newPrice: number) => {
+        const updated = validations.map(v => v.id === id ? { ...v, finalPrice: newPrice } : v);
+        setValidations(updated);
+        updateProject({ ...project, insumoValidations: updated });
+    };
+
     return (
         <div className="space-y-6">
-            <Quadrant title="Mapeamento de Composições">
-                 <p className="text-gray-600 dark:text-gray-300">
-                     <b>Propósito da Etapa:</b> Aqui, para cada item do escopo detalhado, a IA irá sugerir composições de custo existentes em seu banco de dados. Você poderá selecionar a mais adequada ou marcar para criar uma nova.
-                    <br /><br />
-                    (Funcionalidade a ser implementada)
-                 </p>
-            </Quadrant>
+            {isValidating && (
+                <div className="flex flex-col items-center justify-center text-center p-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <Spinner className="w-8 h-8 mb-4" />
+                    <h3 className="text-lg font-semibold dark:text-white">Levantando e Validando Custos...</h3>
+                    <p className="text-gray-600 dark:text-gray-400">A IA está cruzando o escopo com sua base de dados e pesquisando preços de mercado.</p>
+                </div>
+            )}
+
+            {!isValidating && validations.length > 0 && (
+                <Quadrant title="Validação de Custos de Insumos">
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                            Confirme os preços unitários dos insumos antes de gerar as composições.
+                            <br/>
+                            <span className="text-xs text-gray-500">Itens marcados como <Badge color="green">Base</Badge> já existem no seu sistema. Itens <Badge color="yellow">Novo</Badge> foram estimados pela IA/Web.</span>
+                        </p>
+
+                        <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead className="text-left text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 uppercase">
+                                    <tr>
+                                        <th className="p-3">Insumo</th>
+                                        <th className="p-3 w-20 text-center">Un.</th>
+                                        <th className="p-3 w-32 text-right">Preço Base</th>
+                                        <th className="p-3 w-32 text-right">Sugestão IA</th>
+                                        <th className="p-3 w-32 text-right font-bold bg-blue-50 dark:bg-blue-900/20">Preço Final</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                    {validations.map((item) => (
+                                        <tr key={item.id}>
+                                            <td className="p-3">
+                                                <div className="font-medium text-gray-900 dark:text-gray-200">{item.nome}</div>
+                                                {item.status === 'ok' ? (
+                                                    <span className="text-xs text-green-600 dark:text-green-400">Encontrado na Base</span>
+                                                ) : (
+                                                    <span className="text-xs text-yellow-600 dark:text-yellow-400">Novo (Fonte: {item.aiSource})</span>
+                                                )}
+                                            </td>
+                                            <td className="p-3 text-center text-gray-500">{item.unidade}</td>
+                                            <td className="p-3 text-right font-mono text-gray-600 dark:text-gray-400">
+                                                {item.databasePrice ? `R$ ${item.databasePrice.toFixed(2)}` : '-'}
+                                            </td>
+                                            <td className="p-3 text-right font-mono text-gray-600 dark:text-gray-400">
+                                                {item.aiSuggestedPrice ? `R$ ${item.aiSuggestedPrice.toFixed(2)}` : '-'}
+                                            </td>
+                                            <td className="p-3 bg-blue-50 dark:bg-blue-900/10">
+                                                <input 
+                                                    type="number" 
+                                                    value={item.finalPrice}
+                                                    onChange={(e) => handlePriceChange(item.id, parseFloat(e.target.value))}
+                                                    className="w-full text-right bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700 rounded p-1 font-bold text-gray-900 dark:text-white"
+                                                />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </Quadrant>
+            )}
+
             <div className="p-4 border-t dark:border-gray-700 text-center mt-6">
-                <Button onClick={onComplete} size="lg">
-                    Avançar para Validação de Composições →
+                <Button onClick={onComplete} size="lg" disabled={isValidating}>
+                    Confirmar Custos e Gerar Composições →
                 </Button>
             </div>
         </div>
     );
 };
 
-// --- Step 4: Composition Validation (Placeholder) ---
-const Step4Validation = ({ project, onComplete }: { project: Project, onComplete: () => void }) => {
+
+// --- Step 4: Composition Mapping (Former Step 3) ---
+const Step4Mapping = ({ project, onComplete, updateProject }: { project: Project, onComplete: () => void, updateProject: (project: Project) => void }) => {
+    const [isMapping, setIsMapping] = useState(false);
+    const [mappings, setMappings] = useState<CompositionMappingItem[]>(project.compositionMappings || []);
+    const [availableCompositions, setAvailableCompositions] = useState<Composicao[]>([]);
+
+    // Load compositions on mount
+    useEffect(() => {
+        const loadComps = async () => {
+            const comps = await compositionService.fetchAll();
+            setAvailableCompositions(comps);
+        };
+        loadComps();
+    }, []);
+
+    const handleStartMapping = useCallback(async () => {
+        if (!project.detailedServices) return;
+        setIsMapping(true);
+        try {
+            const newMappings = await mapScopeToCompositions(project.detailedServices, availableCompositions);
+            setMappings(newMappings);
+            updateProject({ ...project, compositionMappings: newMappings });
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsMapping(false);
+        }
+    }, [project, availableCompositions, updateProject]);
+
+    // Auto-run mapping if not done yet
+    useEffect(() => {
+        if (!project.compositionMappings || project.compositionMappings.length === 0) {
+            if (availableCompositions.length > 0 && !isMapping) {
+                handleStartMapping();
+            }
+        }
+    }, [project.compositionMappings, availableCompositions, isMapping, handleStartMapping]);
+
+    const handleSelectComposition = (serviceId: string, compositionId: string) => {
+        const updatedMappings = mappings.map(m => 
+            m.serviceId === serviceId 
+            ? { ...m, selectedCompositionId: compositionId, status: 'matched' as const } 
+            : m
+        );
+        setMappings(updatedMappings);
+        updateProject({ ...project, compositionMappings: updatedMappings });
+    };
+
+    const handleMarkForCreation = (serviceId: string) => {
+        const updatedMappings = mappings.map(m => 
+            m.serviceId === serviceId 
+            ? { ...m, selectedCompositionId: undefined, needsCreation: true, status: 'missing' as const } 
+            : m
+        );
+        setMappings(updatedMappings);
+        updateProject({ ...project, compositionMappings: updatedMappings });
+    };
+
     return (
         <div className="space-y-6">
-            <Quadrant title="Validação de Composições">
+            {isMapping && (
+                <div className="flex flex-col items-center justify-center text-center p-8 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                    <Spinner className="w-8 h-8 mb-4" />
+                    <h3 className="text-lg font-semibold dark:text-white">A IA está mapeando seu escopo...</h3>
+                    <p className="text-gray-600 dark:text-gray-400">Buscando as melhores composições no seu banco de dados.</p>
+                </div>
+            )}
+
+            {!isMapping && mappings.length > 0 && (
+                <Quadrant title="Mapeamento de Composições">
+                    <div className="space-y-4">
+                        <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                            A IA comparou os serviços do escopo com sua base de composições. Revise as sugestões e confirme as associações.
+                        </p>
+                        
+                        <div className="space-y-6">
+                            {mappings.map((mapping, idx) => {
+                                const selectedComp = availableCompositions.find(c => c.id === (mapping.selectedCompositionId || mapping.suggestedCompositionId));
+                                
+                                return (
+                                    <div key={idx} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800/50">
+                                        <div className="flex flex-col md:flex-row justify-between gap-4 mb-3">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="text-xs font-bold text-gray-500">ITEM {idx + 1}</span>
+                                                    {mapping.status === 'matched' && <Badge color="green">Encontrado</Badge>}
+                                                    {mapping.status === 'partial' && <Badge color="yellow">Similar</Badge>}
+                                                    {mapping.status === 'missing' && <Badge color="red">Novo</Badge>}
+                                                </div>
+                                                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">{mapping.serviceName}</h4>
+                                                <p className="text-sm text-gray-500 italic">{mapping.matchReasoning}</p>
+                                            </div>
+                                            
+                                            <div className="flex-1 bg-gray-50 dark:bg-gray-900 p-3 rounded-md border border-gray-200 dark:border-gray-700">
+                                                <p className="text-xs font-semibold text-gray-500 mb-2 uppercase">Composição Vinculada</p>
+                                                
+                                                {selectedComp ? (
+                                                    <div>
+                                                        <div className="flex justify-between items-start">
+                                                            <div>
+                                                                <p className="font-bold text-primary text-sm">{selectedComp.codigo}</p>
+                                                                <p className="text-sm text-gray-800 dark:text-gray-200 line-clamp-2">{selectedComp.titulo}</p>
+                                                            </div>
+                                                            <button onClick={() => handleMarkForCreation(mapping.serviceId)} className="text-xs text-red-500 hover:underline whitespace-nowrap ml-2">
+                                                                Desvincular
+                                                            </button>
+                                                        </div>
+                                                        <div className="mt-2 flex gap-4 text-xs text-gray-500">
+                                                            <span>Un: <strong>{selectedComp.unidade}</strong></span>
+                                                            <span>Custo: <strong>R$ {selectedComp.indicadores.custoDiretoTotalPorUnidade.toFixed(2)}</strong></span>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-between h-full">
+                                                        <p className="text-sm text-gray-500 italic">Nenhuma composição selecionada. Será criada do zero.</p>
+                                                        {mapping.suggestedCompositionId && (
+                                                            <Button size="sm" variant="secondary" onClick={() => handleSelectComposition(mapping.serviceId, mapping.suggestedCompositionId!)}>
+                                                                Usar Sugestão
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                        
+                                        {/* Search/Select Alternative (Simplified dropdown for now) */}
+                                        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/50">
+                                            <select 
+                                                className="w-full p-2 text-sm border rounded bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-700 dark:text-gray-200"
+                                                value={mapping.selectedCompositionId || ''}
+                                                onChange={(e) => {
+                                                    if (e.target.value) handleSelectComposition(mapping.serviceId, e.target.value);
+                                                    else handleMarkForCreation(mapping.serviceId);
+                                                }}
+                                            >
+                                                <option value="">{mapping.needsCreation ? "➕ Criar nova composição para este item" : "Selecione uma composição..."}</option>
+                                                {availableCompositions.map(c => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {c.codigo} - {c.titulo} (R$ {c.indicadores.custoDiretoTotalPorUnidade.toFixed(2)})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </Quadrant>
+            )}
+
+            <div className="p-4 border-t dark:border-gray-700 text-center mt-6">
+                <Button onClick={onComplete} size="lg" disabled={isMapping || mappings.length === 0}>
+                    Confirmar Mapeamento e Avançar →
+                </Button>
+            </div>
+        </div>
+    );
+};
+
+// --- Step 5: Composition Validation (Placeholder) ---
+const Step5FinalValidation = ({ project, onComplete }: { project: Project, onComplete: () => void }) => {
+    return (
+        <div className="space-y-6">
+            <Quadrant title="Validação Final das Composições">
                  <p className="text-gray-600 dark:text-gray-300">
-                    <b>Propósito da Etapa:</b> Após o mapeamento, a IA irá criar as composições marcadas como "novas".
+                    <b>Composições Geradas e Prontas:</b>
                     <br /><br />
-                    Nesta tela, você verá:
-                    <br />1. As novas composições para sua aprovação.
-                    <br />2. A lista consolidada de todas as composições (novas e existentes) para uma revisão final.
+                    A IA gerou as composições faltantes usando os <b>preços de insumos que você validou na Etapa 3</b>.
                     <br /><br />
-                    (Funcionalidade a ser implementada)
+                    (Funcionalidade de visualização em massa a ser implementada)
                  </p>
             </Quadrant>
             <div className="p-4 border-t dark:border-gray-700 text-center mt-6">
                 <Button onClick={onComplete} size="lg">
-                    Avançar para Validação de Custos →
+                    Avançar para Planejamento →
                 </Button>
             </div>
         </div>
@@ -1028,10 +1273,11 @@ export const WorkspaceView: React.FC<WorkspaceViewProps> = ({ project, onBack, u
             case 2:
                 return <Step2DetailedScope project={project} onAdvance={handleAdvanceToMapping} updateProject={updateProject} showToast={showToast} />;
             case 3:
-                return <Step3Mapping project={project} onComplete={() => handleStepCompletion(3, {})} />;
+                return <Step3InsumoValidation project={project} onComplete={() => handleStepCompletion(3, {})} updateProject={updateProject} showToast={showToast} />;
             case 4:
-                return <Step4Validation project={project} onComplete={() => handleStepCompletion(4, {})} />;
-            case 5: return <p className="dark:text-gray-300 p-6">Etapa 5: Validação de Custos e Recálculo Final.</p>;
+                return <Step4Mapping project={project} onComplete={() => handleStepCompletion(4, {})} updateProject={updateProject} />;
+            case 5:
+                return <Step5FinalValidation project={project} onComplete={() => handleStepCompletion(5, {})} />;
             case 6: return <p className="dark:text-gray-300 p-6">Etapa 6: Consolidação, Planejamento e Contingência de Prazo.</p>;
             case 7: return <div className="p-6"><p className="dark:text-gray-300">Etapa 7: Precificação, Contingência de Custo e Geração de Documentos.</p><Button className="mt-4" onClick={() => handleStepCompletion(7, {})}>Finalizar Orçamento</Button></div>;
             default: return null;

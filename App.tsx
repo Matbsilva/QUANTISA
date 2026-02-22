@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -7,7 +6,7 @@ import { DashboardView } from './components/Dashboard';
 import { WorkspaceView } from './components/Workspace';
 import { ProjectDetailView } from './components/ProjectDetailView';
 import { AnalysisView } from './components/AnalysisView';
-import { AskView } from './components/AskView';
+import { StartHereView } from './components/StartHereView';
 import { DataMasterView } from './components/DataMasterView';
 import { SettingsView } from './components/SettingsView';
 import { CompositionsView } from './components/CompositionsView';
@@ -19,90 +18,6 @@ import { mockProjects, mockInsumos, mockComposicoes } from './services/mockData'
 
 type ActivePage = 'dashboard' | 'ask' | 'analysis' | 'datamaster' | 'settings' | 'composicoes';
 type CurrentView = 'page' | 'workspace' | 'project-details';
-
-
-// --- INTERACTIVE TEST PLAN ---
-const TestPlan = () => {
-    interface TestItem {
-        id: number;
-        text: string;
-        subTests?: TestItem[];
-    }
-
-    const testData: TestItem[] = [
-        { 
-            id: 1, text: "Testar Tela de Verificação de Similaridade (UI/UX Corrigido):",
-            subTests: [
-                { id: 11, text: 'Vá para a aba "Composições" → "Importar".' },
-                { id: 12, text: 'Cole uma ou mais composições e clique em "Processar e Verificar Similaridade".' },
-                { id: 13, text: 'Verificar Contraste do Candidato: Confirme que o card de cada "Candidato Similar" agora tem um fundo cinza mais escuro (bg-slate-100), destacando-se visualmente do card branco da "Nova composição".' },
-                { id: 14, text: 'Verificar Escopo Completo: Confirme que o campo "Escopo:" agora exibe o texto completo, sem resumos. O texto deve quebrar a linha corretamente.' },
-                { 
-                    id: 15, text: "Verificar Legibilidade e Hierarquia:",
-                    subTests: [
-                        { id: 151, text: "O título do candidato deve estar maior (text-lg)." },
-                        { id: 152, text: "O texto do escopo deve estar maior (text-sm) e com cor de alto contraste (text-gray-700)." },
-                        { id: 153, text: "O texto do score e motivo deve estar em text-sm e com cor de alto contraste (text-gray-700)." }
-                    ]
-                }
-            ]
-        },
-        { 
-            id: 2, text: "Testar Modal de Detalhes (Contraste Corrigido):",
-            subTests: [
-                { id: 21, text: 'Navegue para a aba "Pesquisar".' },
-                { id: 22, text: 'Clique em qualquer composição para abrir o modal de detalhes.' },
-                { id: 23, text: 'Verificar Botão "Copiar": Confirme que o botão "Copiar Composição (Markdown)" agora tem um texto azul escuro (text-blue-800) sobre um fundo azul claro (bg-blue-100 / dark:bg-blue-200), garantindo excelente legibilidade em ambos os temas, claro e escuro.' }
-            ]
-        }
-    ];
-
-    const [completedTests, setCompletedTests] = useState<Set<number>>(new Set());
-
-    const toggleTest = (id: number) => {
-        setCompletedTests(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(id)) {
-                newSet.delete(id);
-            } else {
-                newSet.add(id);
-            }
-            return newSet;
-        });
-    };
-
-    const TestList: React.FC<{ items: TestItem[], level?: number }> = ({ items, level = 0 }) => (
-        <ul className={`list-inside space-y-1 ${level > 0 ? 'pl-6' : ''}`}>
-            {items.map(test => (
-                <li key={test.id}>
-                    <label className="flex items-start cursor-pointer group">
-                        <input
-                            type="checkbox"
-                            checked={completedTests.has(test.id)}
-                            onChange={() => toggleTest(test.id)}
-                            className="mr-3 mt-1 flex-shrink-0 form-checkbox h-4 w-4 text-yellow-600 rounded border-gray-400 focus:ring-yellow-500"
-                        />
-                        <span className={`${completedTests.has(test.id) ? 'line-through text-gray-500' : ''} ${test.subTests ? 'font-semibold' : ''}`}>{test.text}</span>
-                    </label>
-                    {test.subTests && (
-                         <div className="pt-1">
-                            <TestList items={test.subTests} level={level + 1} />
-                        </div>
-                    )}
-                </li>
-            ))}
-        </ul>
-    );
-
-    return (
-        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-4 mb-4 rounded-md shadow-lg dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-600">
-            <h3 className="font-bold text-lg">Plano de Testes para Validação (V2.0)</h3>
-            <p className="text-sm mt-1 mb-3">Para garantir que as novas melhorias visuais e funcionais estão corretas, por favor, siga este checklist:</p>
-            <TestList items={testData} />
-        </div>
-    );
-};
-
 
 // --- THEME TOGGLE ---
 const ThemeToggle = () => {
@@ -152,7 +67,7 @@ const ThemeToggle = () => {
 // --- SIDEBAR ---
 const Sidebar = ({ onNewProject, activePage, onNavigate }: { onNewProject: () => void; activePage: ActivePage; onNavigate: (page: ActivePage) => void; }) => {
     const navItems = [
-        { id: 'ask', label: 'Home / Ask Quantisa', icon: <SearchIcon className="mr-3 w-5 h-5"/> },
+        { id: 'ask', label: 'Ask H-Quant', icon: <SearchIcon className="mr-3 w-5 h-5"/> },
         { id: 'analysis', label: 'Comece Por Aqui / Análise', icon: <span className="mr-3 text-lg">⚡</span> },
         { id: 'dashboard', label: 'Dashboard (Kanban)', icon: <span className="mr-3 text-lg">📊</span> },
         { id: 'datamaster', label: 'Insumos', icon: <span className="mr-3 text-lg">🗄️</span> },
@@ -642,7 +557,7 @@ const App: React.FC = () => {
     const getHeaderTitle = () => {
         const pageTitles: Record<ActivePage, string> = {
             dashboard: "Dashboard (Kanban)",
-            ask: "Ask Quantisa",
+            ask: "Ask H-Quant",
             analysis: "Iniciar Nova Análise de Escopo",
             datamaster: "Insumos",
             composicoes: "Gestão de Composições",
@@ -658,13 +573,10 @@ const App: React.FC = () => {
         switch (activePage) {
             case 'dashboard':
                 return (
-                    <>
-                        <TestPlan />
-                        <DashboardView projects={projects} setProjects={setProjects} onSelectProject={handleSelectProject} onDeleteProject={handleDeleteProject} />
-                    </>
+                    <DashboardView projects={projects} setProjects={setProjects} onSelectProject={handleSelectProject} onDeleteProject={handleDeleteProject} />
                 );
             case 'ask':
-                return <AskView />;
+                return <StartHereView composicoes={composicoes} showToast={showToast} />;
             case 'analysis':
                 return <AnalysisView onAdvance={handleAdvanceFromAnalysis} />;
             case 'datamaster':

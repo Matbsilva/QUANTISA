@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { Button, Spinner, XIcon } from './Shared';
 import { analyzeText, analyzeImage } from '../services/geminiService';
 import type { ParsedAnalysis } from '../types';
@@ -153,7 +154,7 @@ Com base no escopo fornecido, execute uma análise técnica inicial completa, in
                             <div className="space-y-1 text-center">
                                 {previewUrl ? (
                                     <div className="relative group">
-                                        <img src={previewUrl} alt="Preview do escopo" className="mx-auto h-32 w-auto rounded-md" />
+                                        <Image src={previewUrl} alt="Preview do escopo" width={200} height={128} className="mx-auto h-32 w-auto rounded-md object-contain" unoptimized />
                                         <div 
                                             onClick={() => setImageFile(null)} 
                                             className="absolute top-0 right-0 -mt-2 -mr-2 bg-red-500 text-white rounded-full p-1 cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
